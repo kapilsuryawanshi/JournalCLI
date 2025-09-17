@@ -102,6 +102,7 @@ def format_note(note, indent="    "):
 
 def add_task(texts):
     today = datetime.now().date().strftime("%Y-%m-%d")
+    added_count = 0
     with sqlite3.connect(DB_FILE) as conn:
         for raw in texts:
             raw = raw.strip()
@@ -115,23 +116,35 @@ def add_task(texts):
                 "INSERT INTO tasks (title,status,creation_date,due_date) VALUES (?,?,?,?)",
                 (title.strip(), "todo", today, due.strftime("%Y-%m-%d"))
             )
+            added_count += 1
+    if added_count > 0:
+        print(f"Added {added_count} task(s)")
 
 def add_note(task_ids, text):
     today = datetime.now().date().strftime("%Y-%m-%d")
+    added_count = 0
     with sqlite3.connect(DB_FILE) as conn:
         if not task_ids:
             conn.execute(
                 "INSERT INTO notes (text,creation_date) VALUES (?,?)",
                 (text, today)
             )
+            added_count += 1
         else:
             for tid in task_ids:
                 conn.execute(
                     "INSERT INTO notes (text,creation_date,task_id) VALUES (?,?,?)",
                     (text, today, tid)
                 )
+                added_count += 1
+    if added_count > 0:
+        if task_ids:
+            print(f"Added note to {added_count} task(s)")
+        else:
+            print("Added standalone note")
 
 def update_task_status(task_ids, status):
+    updated_count = 0
     with sqlite3.connect(DB_FILE) as conn:
         for tid in task_ids:
             # If marking as done, check if it's a recurring task
@@ -151,6 +164,7 @@ def update_task_status(task_ids, status):
                         "INSERT INTO tasks (title,status,creation_date,due_date,recur) VALUES (?,?,?,?,?)",
                         (title, "todo", today, new_due_date, recur)
                     )
+                    print(f"Created recurring task for '{title}'")
                 
                 # Set completion date for the original task
                 today = datetime.now().date().strftime("%Y-%m-%d")
@@ -158,17 +172,23 @@ def update_task_status(task_ids, status):
                     "UPDATE tasks SET status=?, completion_date=? WHERE id=?",
                     (status, today, tid)
                 )
+                updated_count += 1
             # If moving from done to another status, clear completion date
             elif status in ["todo", "doing", "waiting"]:
                 conn.execute(
                     "UPDATE tasks SET status=?, completion_date=NULL WHERE id=?",
                     (status, tid)
                 )
+                updated_count += 1
             else:
                 conn.execute(
                     "UPDATE tasks SET status=? WHERE id=?",
                     (status, tid)
                 )
+                updated_count += 1
+    if updated_count > 0:
+        status_display = "undone" if status == "todo" else status
+        print(f"Updated {updated_count} task(s) to {status_display}")
 
 def calculate_next_due_date(current_due_date, recur_pattern):
     """Calculate the next due date based on the recur pattern"""
@@ -212,21 +232,21 @@ def set_task_recur(task_ids, recur_pattern):
     # Validate the recur pattern
     if not recur_pattern or len(recur_pattern) < 2:
         print("Error: Invalid recur pattern. Use format: <number><unit> (e.g., 4w, 2d, 1m, 1y)")
-        return
+        return False
         
     unit = recur_pattern[-1].lower()
     if unit not in ['d', 'w', 'm', 'y']:
         print("Error: Invalid unit. Use d (days), w (weeks), m (months), or y (years)")
-        return
+        return False
         
     try:
         number = int(recur_pattern[:-1])
         if number < 1 or number > 31:
             print("Error: Number must be between 1 and 31")
-            return
+            return False
     except ValueError:
         print("Error: Invalid number in recur pattern")
-        return
+        return False
     
     with sqlite3.connect(DB_FILE) as conn:
         for tid in task_ids:
@@ -234,6 +254,7 @@ def set_task_recur(task_ids, recur_pattern):
                 "UPDATE tasks SET recur=? WHERE id=?",
                 (recur_pattern, tid)
             )
+    return True
 
 def show_journal():
     with sqlite3.connect(DB_FILE) as conn:
@@ -274,7 +295,7 @@ def show_journal():
 def show_due():
     with sqlite3.connect(DB_FILE) as conn:
         tasks = conn.execute(
-            "SELECT id,title,status,creation_date,due_date,completion_date,recur FROM tasks ORDER BY due_date ASC"
+            "SELECT id,title,status,creation_date,due_date,completion_date,recur FROM tasks WHERE status != 'done' ORDER BY due_date ASC"
         ).fetchall()
 
     today = datetime.now().date()
@@ -284,9 +305,9 @@ def show_due():
         # t[4] is due_date
         if t[4]:  # Check if due date exists
             due = datetime.strptime(t[4], "%Y-%m-%d").date()
-            if due < today and t[2] != "done":  # t[2] is status
+            if due < today:  # No need to check status since we filtered in query
                 buckets["Overdue"].append(t)
-            elif due == today and t[2] != "done":
+            elif due == today:
                 buckets["Due Today"].append(t)
             else:
                 buckets["Upcoming"].append(t)
@@ -304,9 +325,16 @@ def show_task():
         tasks = conn.execute(
             "SELECT id,title,status,creation_date,due_date,completion_date,recur FROM tasks WHERE status != 'done' ORDER BY creation_date ASC"
         ).fetchall()
-    
-    for task in tasks:
-        print(format_task(task))
+
+    # Group tasks by creation_date
+    grouped = defaultdict(list)
+    for t in tasks:
+        grouped[t[3]].append(t)  # t[3] is creation_date
+
+    for day in sorted(grouped.keys()):
+        print(day)
+        for task in grouped[day]:
+            print("  " + format_task(task))
 
 def show_note():
     with sqlite3.connect(DB_FILE) as conn:
@@ -317,13 +345,20 @@ def show_note():
             LEFT JOIN tasks t ON n.task_id = t.id
             ORDER BY n.creation_date ASC, n.id ASC
         """).fetchall()
-    
-    for note in notes:
-        nid, text, creation_date, task_id, task_title = note
-        if task_id:
-            print(f"{nid}. {text} (for task: {task_id}. {task_title})")
-        else:
-            print(f"{nid}. {text}")
+
+    # Group notes by creation_date
+    grouped = defaultdict(list)
+    for n in notes:
+        grouped[n[2]].append(n)  # n[2] is creation_date
+
+    for day in sorted(grouped.keys()):
+        print(day)
+        for note in grouped[day]:
+            nid, text, creation_date, task_id, task_title = note
+            if task_id:
+                print(f"  {nid}. {text} (for task: {task_id}. {task_title})")
+            else:
+                print(f"  {nid}. {text}")
 
 def show_completed_tasks():
     with sqlite3.connect(DB_FILE) as conn:
@@ -361,16 +396,38 @@ def main():
 
     if cmd is None:
         show_journal()
-    elif cmd == "task":
+    elif cmd == "task" and rest:  # Only handle as add task command if there are arguments
+        add_task(" ".join(rest).split(","))
+    elif cmd == "t" and rest:  # Alias for adding tasks
         add_task(" ".join(rest).split(","))
     elif cmd == "note" and rest:  # Only handle as add note command if there are arguments
         if all(c.isdigit() or c == "," for c in rest[0]):
             ids = rest[0].split(",")
             text = " ".join(rest[1:])
-            add_note([int(i) for i in ids], text)
+            if text:
+                add_note([int(i) for i in ids], text)
+            else:
+                print("Error: Please provide note text")
         else:
             text = " ".join(rest)
-            add_note([], text)
+            if text:
+                add_note([], text)
+            else:
+                print("Error: Please provide note text")
+    elif cmd == "n" and rest:  # Alias for adding notes
+        if all(c.isdigit() or c == "," for c in rest[0]):
+            ids = rest[0].split(",")
+            text = " ".join(rest[1:])
+            if text:
+                add_note([int(i) for i in ids], text)
+            else:
+                print("Error: Please provide note text")
+        else:
+            text = " ".join(rest)
+            if text:
+                add_note([], text)
+            else:
+                print("Error: Please provide note text")
     elif cmd in ["task", "t"]:
         show_task()
     elif cmd in ["note", "n"]:
@@ -388,12 +445,16 @@ def main():
             # Parse the date
             if len(rest) > 1:
                 due = parse_due(rest[1])
+                updated_count = 0
                 with sqlite3.connect(DB_FILE) as conn:
                     for tid in task_ids:
                         conn.execute(
                             "UPDATE tasks SET due_date=? WHERE id=?",
                             (due.strftime("%Y-%m-%d"), tid)
                         )
+                        updated_count += 1
+                if updated_count > 0:
+                    print(f"Updated due date for {updated_count} task(s) to {due.strftime('%Y-%m-%d')}")
             else:
                 print("Error: Please provide a date.")
         else:
@@ -408,27 +469,57 @@ def main():
             
             # Parse the recur pattern
             recur_pattern = rest[1]
-            set_task_recur(task_ids, recur_pattern)
+            if set_task_recur(task_ids, recur_pattern):
+                print(f"Set recur pattern '{recur_pattern}' for {len(task_ids)} task(s)")
         else:
             print("Error: Please provide task IDs and a recur pattern (e.g., 4w, 2d, 1m, 1y)")
     elif cmd in ["undone", "doing", "waiting"]:  # Removed "done" from here
         if rest:
             ids = []
             for arg in rest:
-                ids.extend([int(i) for i in arg.split(",")])
-            update_task_status(ids, cmd)
+                if all(c.isdigit() or c == "," for c in arg):
+                    ids.extend([int(i) for i in arg.split(",")])
+                else:
+                    print(f"Error: Invalid task ID '{arg}'")
+                    return
+            if ids:
+                # "undone" should set status back to "todo"
+                status = "todo" if cmd == "undone" else cmd
+                update_task_status(ids, status)
+            else:
+                print("Error: Please provide valid task IDs")
+        else:
+            print("Error: Please provide task IDs")
     elif cmd == "done":  # Handle "done" status command
         if rest:
             ids = []
             for arg in rest:
-                ids.extend([int(i) for i in arg.split(",")])
-            update_task_status(ids, "done")
+                if all(c.isdigit() or c == "," for c in arg):
+                    ids.extend([int(i) for i in arg.split(",")])
+                else:
+                    print(f"Error: Invalid task ID '{arg}'")
+                    return
+            if ids:
+                update_task_status(ids, "done")
+            else:
+                print("Error: Please provide valid task IDs")
+        else:
+            print("Error: Please provide task IDs")
     elif cmd == "x":
         if rest:
             ids = []
             for arg in rest:
-                ids.extend([int(i) for i in arg.split(",")])
-            update_task_status(ids, "done")
+                if all(c.isdigit() or c == "," for c in arg):
+                    ids.extend([int(i) for i in arg.split(",")])
+                else:
+                    print(f"Error: Invalid task ID '{arg}'")
+                    return
+            if ids:
+                update_task_status(ids, "done")
+            else:
+                print("Error: Please provide valid task IDs")
+        else:
+            print("Error: Please provide task IDs")
     elif cmd in ["help", "h"]:
         print("""
 jrnl - Command Line Journal and Task Manager
@@ -439,7 +530,9 @@ USAGE:
 COMMANDS:
     jrnl                    Show journal (default view)
     jrnl task <text>[,<text>...]     Add tasks
+    jrnl t <text>[,<text>...]        Add tasks (alias)
     jrnl note [<task id>[,<task id>...]] <text>  Add notes
+    jrnl n [<task id>[,<task id>...]] <text>     Add notes (alias)
     jrnl task (or t)        Show all unfinished tasks
     jrnl note (or n)        Show all notes
     jrnl done               Show all completed tasks grouped by completion date
@@ -472,7 +565,9 @@ DATE FORMATS:
 
 EXAMPLES:
     jrnl task "Do homework @tomorrow,Finish report @2025-12-25"
+    jrnl t "Do homework @tomorrow,Finish report @2025-12-25"
     jrnl note 2 "Remember to check references"
+    jrnl n 2 "Remember to check references"
     jrnl done 2
     jrnl due 1,2,3 eom
     jrnl recur 2,3 4w
