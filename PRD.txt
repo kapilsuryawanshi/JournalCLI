@@ -1,0 +1,163 @@
+**Objective:**
+Build a lightweight, command-line journaling and task management application named `jrnl` in Python. The tool should be simple to use, low cognitive load, and effective for students or employees during work hours.
+
+---
+
+### General Requirements
+
+* Runs as a command-line program: `jrnl [command] [arguments...]`.
+* Stores all data in a local SQLite database.
+* Supports two entities: **tasks** and **notes**.
+
+---
+
+### Data Model
+
+**Task**
+
+* `id` (auto increment)
+* `title` (string)
+* `status` (todo | doing | waiting | done, default = todo)
+* `creation_date` (auto set)
+* `due_date` (default = creation date, can be overridden)
+* `completion_date` (set when moved to `done`)
+
+**Note**
+
+* `id` (auto increment)
+* `text` (string)
+* `creation_date` (auto set)
+* `task_id` (nullable, links to task if provided)
+
+---
+
+### Commands
+
+1. **Add tasks**
+
+   ```
+   jrnl . <text>[,<text>...]
+   ```
+
+   * Creates one or more tasks.
+   * Each `<text>` is a task title.
+   * A task title may include an optional due date keyword or explicit date using `@`:
+
+     * Keywords: `today`, `tomorrow`, `eow` (end of week), `eom` (end of month), `eoy` (end of year)
+     * Example: `jrnl . "Submit report @tomorrow, Finish taxes @2025-10-15"`
+
+2. **Add notes**
+
+   ```
+   jrnl - [<task id>[,<task id>...]] <text>
+   ```
+
+   * Creates a note.
+   * If task IDs are provided, links the note to those tasks. Otherwise, note is standalone.
+
+3. **View journal (default)**
+
+   ```
+   jrnl
+   ```
+
+   * Shows outline view grouped by **creation date (ascending)**.
+   * Within each day:
+
+     * Task format: `<id>. [ ] <title>`
+
+       * `[x]` if done.
+       * Show due date inline `(due: YYYY-MM-DD)`.
+       * Overdue tasks = red font.
+       * Due today = cyan.
+       * Status colors:
+
+         * `doing` → yellow text
+         * `waiting` → gray background
+         * `done` → green text
+     * Notes indented under parent task: `<id>. <text>`.
+
+4. **View grouped by due date**
+
+   ```
+   jrnl due
+   ```
+
+   * Groups tasks as: Overdue / Due Today / Upcoming / No Due Date.
+   * Sorted by due date within groups.
+
+5. **View only tasks**
+
+   ```
+   jrnl tasks
+   ```
+
+   * Shows all tasks not marked `done`.
+
+6. **View only notes**
+
+   ```
+   jrnl notes
+   ```
+
+   * Shows all notes.
+
+7. **Change task status**
+
+   ```
+   jrnl undone <id>[,<id>...]
+   jrnl doing <id>[,<id>...]
+   jrnl waiting <id>[,<id>...]
+   jrnl done <id>[,<id>...]
+   ```
+
+   * Updates task status.
+   * `undone` resets a completed task back to `todo`.
+   * Shortcuts:
+
+     * `jrnl x <id>` = mark task as `done`.
+
+8. **Adjust due date**
+
+   ```
+   jrnl due <id> <keyword|YYYY-MM-DD>
+   ```
+
+   * Changes due date for a task.
+   * Supports same keywords as task creation (`today`, `tomorrow`, `eow`, `eom`, `eoy`).
+
+9. **Help**
+
+   ```
+   jrnl help
+   ```
+
+   * Prints list of all commands with usage examples.
+
+---
+
+### Example Commands
+
+```
+jrnl
+jrnl . Do homework,Read article @tomorrow
+jrnl - 2 Remember to check references
+jrnl done 2
+jrnl due 1 eom
+jrnl due
+jrnl tasks
+jrnl notes
+jrnl help
+```
+
+---
+
+### UX Considerations
+
+* Aliases: `t` = tasks, `n` = notes, `d` = due, `h` = help.
+* Minimal color coding, only where it adds clarity (status + due state).
+* Keep commands terse; most operations should be single-line.
+* Default view = creation-date outline, for quick “what happened today.”
+* Optional `due` view helps with forward-looking planning.
+
+---
