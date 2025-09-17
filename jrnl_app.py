@@ -256,6 +256,35 @@ def set_task_recur(task_ids, recur_pattern):
             )
     return True
 
+def delete_task(task_ids):
+    """Delete tasks from the database"""
+    deleted_count = 0
+    with sqlite3.connect(DB_FILE) as conn:
+        for tid in task_ids:
+            # First delete associated notes
+            conn.execute("DELETE FROM notes WHERE task_id=?", (tid,))
+            # Then delete the task
+            cursor = conn.execute("DELETE FROM tasks WHERE id=?", (tid,))
+            if cursor.rowcount > 0:
+                deleted_count += 1
+    if deleted_count > 0:
+        print(f"Deleted {deleted_count} task(s)")
+    else:
+        print("No tasks were deleted")
+
+def delete_note(note_ids):
+    """Delete notes from the database"""
+    deleted_count = 0
+    with sqlite3.connect(DB_FILE) as conn:
+        for nid in note_ids:
+            cursor = conn.execute("DELETE FROM notes WHERE id=?", (nid,))
+            if cursor.rowcount > 0:
+                deleted_count += 1
+    if deleted_count > 0:
+        print(f"Deleted {deleted_count} note(s)")
+    else:
+        print("No notes were deleted")
+
 def show_journal():
     with sqlite3.connect(DB_FILE) as conn:
         # get tasks
@@ -428,6 +457,35 @@ def main():
                 add_note([], text)
             else:
                 print("Error: Please provide note text")
+    elif cmd == "rm":
+        if rest:
+            task_ids = []
+            note_ids = []
+            
+            # Handle all arguments
+            for arg in rest:
+                # Handle comma-separated IDs
+                id_parts = arg.split(",")
+                for id_part in id_parts:
+                    # Check if argument has a prefix
+                    if id_part.startswith("t") and id_part[1:].isdigit():
+                        task_ids.append(int(id_part[1:]))
+                    elif id_part.startswith("n") and id_part[1:].isdigit():
+                        note_ids.append(int(id_part[1:]))
+                    elif id_part.isdigit():
+                        # For backward compatibility, assume it's a task ID
+                        task_ids.append(int(id_part))
+                    else:
+                        print(f"Error: Invalid ID format '{id_part}'. Use 't<ID>' for tasks or 'n<ID>' for notes")
+                        return
+            
+            # Delete items
+            if task_ids:
+                delete_task(task_ids)
+            if note_ids:
+                delete_note(note_ids)
+        else:
+            print("Error: Please provide IDs to delete")
     elif cmd in ["task", "t"]:
         show_task()
     elif cmd in ["note", "n"]:
@@ -544,6 +602,7 @@ COMMANDS:
     jrnl waiting <id>[,<id>...]   Mark tasks as waiting
     jrnl done <id>[,<id>...]      Mark tasks as done
     jrnl x <id>[,<id>...]         Mark tasks as done (shortcut)
+    jrnl rm t<id>[,n<id>...]      Delete tasks (t) or notes (n)
     jrnl help (or h)        Show this help message
 
 DATE FORMATS:
@@ -571,6 +630,7 @@ EXAMPLES:
     jrnl done 2
     jrnl due 1,2,3 eom
     jrnl recur 2,3 4w
+    jrnl rm t1,n2
     jrnl due
     jrnl task
     jrnl note
