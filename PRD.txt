@@ -86,6 +86,7 @@ Build a lightweight, command-line journaling and task management application nam
    * Groups tasks as: Overdue / Due Today / Upcoming / No Due Date.
    * Sorted by due date within groups.
    * Shows notes indented beneath their associated tasks.
+   * Notes are displayed with a yellow background for better visibility.
 
 5. **View only tasks**
 

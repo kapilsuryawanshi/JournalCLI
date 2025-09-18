@@ -98,6 +98,10 @@ def format_note(note, indent="    "):
     nid, text, creation_date, task_id = note
     return indent + f"- {text} (id:{nid})"
 
+def format_note_for_due_view(note, indent="      "):
+    nid, text, creation_date, task_id = note
+    return Back.YELLOW + Fore.BLACK + indent + f"- {text} (id:{nid})" + Style.RESET_ALL
+
 # --- Command Handlers ---
 
 def add_task(texts):
@@ -362,7 +366,7 @@ def show_due():
                 task_id = t[0]  # t[0] is task id
                 if task_id in task_notes:
                     for note in task_notes[task_id]:
-                        print(format_note(note, indent="      "))  # 6 spaces for indentation
+                        print(format_note_for_due_view(note, indent="      "))  # 6 spaces for indentation
 
 def show_task():
     with sqlite3.connect(DB_FILE) as conn:

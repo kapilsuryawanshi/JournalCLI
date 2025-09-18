@@ -109,6 +109,12 @@
     - Note: Standalone notes (not associated with tasks) should not appear in the due view
     - Status: PASSED - Verified (standalone notes don't appear in due view)
 
+24. Due view shows notes with yellow background
+    - Setup: Create a task and add a note to it
+    - Command: jrnl due
+    - Expected: Notes are displayed with yellow background for better visibility
+    - Status: PASSED - Implemented and tested
+
 ## Recurring Tasks Tests
 
 24. Set task as recurring
