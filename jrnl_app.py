@@ -69,13 +69,13 @@ def format_task(task):
 
     # Color based on status
     if status == "doing":
-        text = Fore.YELLOW + f"{tid}. {checkbox} {title}"
+        text = Fore.YELLOW + f"{checkbox} {title} (id:{tid})"
     elif status == "waiting":
-        text = Back.WHITE + Fore.BLACK + f"{tid}. {checkbox} {title}"
+        text = Back.WHITE + Fore.BLACK + f"{checkbox} {title} (id:{tid})"
     elif status == "done":
-        text = Fore.GREEN + f"{tid}. {checkbox} {title}"
+        text = Fore.GREEN + f"{checkbox} {title} (id:{tid})"
     else:  # todo
-        text = f"{tid}. {checkbox} {title}"
+        text = f"{checkbox} {title}  (id:{tid})"
 
     # Show recur pattern if it exists
     if recur:
@@ -96,7 +96,7 @@ def format_task(task):
 
 def format_note(note, indent="    "):
     nid, text, creation_date, task_id = note
-    return indent + f"{nid}. {text}"
+    return indent + f"- {text} (id:{nid})"
 
 # --- Command Handlers ---
 
@@ -385,9 +385,9 @@ def show_note():
         for note in grouped[day]:
             nid, text, creation_date, task_id, task_title = note
             if task_id:
-                print(f"  {nid}. {text} (for task: {task_id}. {task_title})")
+                print(f"  - {text} (id: {nid}) (for task: {task_id}. {task_title})")
             else:
-                print(f"  {nid}. {text}")
+                print(f"  - {text} (id: {nid})")
 
 def show_completed_tasks():
     with sqlite3.connect(DB_FILE) as conn:
