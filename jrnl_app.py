@@ -71,7 +71,7 @@ def format_task(task):
     if status == "doing":
         text = Back.YELLOW + Fore.BLACK + f"{checkbox} {title} (id:{tid})" + Style.RESET_ALL
     elif status == "waiting":
-        text = Back.WHITE + Fore.BLACK + f"{checkbox} {title} (id:{tid})" + Style.RESET_ALL
+        text = Back.LIGHTBLACK_EX + Fore.WHITE + f"{checkbox} {title} (id:{tid})" + Style.RESET_ALL
     elif status == "done":
         text = Fore.GREEN + f"{checkbox} {title} (id:{tid})" + Style.RESET_ALL
     else:  # todo

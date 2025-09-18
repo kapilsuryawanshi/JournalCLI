@@ -87,7 +87,8 @@ Build a lightweight, command-line journaling and task management application nam
    * Sorted by due date within groups.
    * Shows notes indented beneath their associated tasks.
    * Notes are displayed with yellow foreground for better visibility.
-   * Tasks with "doing" status are displayed with yellow background.
+   * Tasks with "doing" status are displayed with yellow background and black text.
+   * Tasks with "waiting" status are displayed with gray background.
 
 5. **View only tasks**
 
@@ -96,6 +97,7 @@ Build a lightweight, command-line journaling and task management application nam
    ```
 
    * Shows all tasks not marked `done`.
+   * Tasks with "waiting" status are displayed with gray background.
 
 6. **View only notes**
 
