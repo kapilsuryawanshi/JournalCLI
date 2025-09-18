@@ -404,9 +404,9 @@ def show_note():
         for note in grouped[day]:
             nid, text, creation_date, task_id, task_title = note
             if task_id:
-                print(f"  - {text} (id: {nid}) (for task: {task_id}. {task_title})")
+                print(Fore.YELLOW + f"  - {text} (id: {nid}) (for task: {task_id}. {task_title})" + Style.RESET_ALL)
             else:
-                print(f"  - {text} (id: {nid})")
+                print(Fore.YELLOW + f"  - {text} (id: {nid})" + Style.RESET_ALL)
 
 def show_completed_tasks():
     with sqlite3.connect(DB_FILE) as conn:

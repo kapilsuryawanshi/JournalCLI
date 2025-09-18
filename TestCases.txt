@@ -43,7 +43,8 @@
 
 10. Note view shows all notes
     - Command: jrnl note
-    - Expected: Shows all notes with their task associations if any (without yellow foreground)
+    - Expected: Shows all notes with their task associations if any, with yellow foreground for better visibility
+    - Status: IMPLEMENTED - Colors may not display correctly in all terminals
 
 11. Due view groups tasks by due date
     - Command: jrnl due
