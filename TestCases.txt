@@ -124,7 +124,7 @@
 26. Tasks with "doing" status have yellow background
     - Setup: Create a task and change its status to "doing"
     - Command: jrnl due
-    - Expected: Tasks with "doing" status are displayed with yellow background
+    - Expected: Tasks with "doing" status are displayed with yellow background and black text
     - Status: IMPLEMENTED - Colors may not display correctly in all terminals
 
 ## Recurring Tasks Tests
