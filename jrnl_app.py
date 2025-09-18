@@ -71,9 +71,9 @@ def format_task(task):
     if status == "doing":
         text = Fore.YELLOW + f"{checkbox} {title} (id:{tid})"
     elif status == "waiting":
-        text = Back.WHITE + Fore.BLACK + f"{checkbox} {title} (id:{tid})"
+        text = Back.WHITE + Fore.BLACK + f"{checkbox} {title} (id:{tid})" + Style.RESET_ALL
     elif status == "done":
-        text = Fore.GREEN + f"{checkbox} {title} (id:{tid})"
+        text = Fore.GREEN + f"{checkbox} {title} (id:{tid})" + Style.RESET_ALL
     else:  # todo
         text = f"{checkbox} {title}  (id:{tid})"
 
@@ -96,11 +96,11 @@ def format_task(task):
 
 def format_note(note, indent="    "):
     nid, text, creation_date, task_id = note
-    return Back.YELLOW + Fore.BLACK + indent + f"- {text} (id:{nid})" + Style.RESET_ALL
+    return indent + f"- {text} (id:{nid})"
 
 def format_note_for_due_view(note, indent="      "):
     nid, text, creation_date, task_id = note
-    return Back.YELLOW + Fore.BLACK + indent + f"- {text} (id:{nid})" + Style.RESET_ALL
+    return Fore.YELLOW + indent + f"- {text} (id:{nid})" + Style.RESET_ALL
 
 # --- Command Handlers ---
 
