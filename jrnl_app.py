@@ -326,6 +326,16 @@ def show_due():
         tasks = conn.execute(
             "SELECT id,title,status,creation_date,due_date,completion_date,recur FROM tasks WHERE status != 'done' ORDER BY due_date ASC"
         ).fetchall()
+        
+        # Get all notes for tasks that will be displayed
+        notes = conn.execute(
+            "SELECT id,text,creation_date,task_id FROM notes WHERE task_id IN (SELECT id FROM tasks WHERE status != 'done') ORDER BY creation_date ASC,id ASC"
+        ).fetchall()
+
+    # Create a mapping of task_id to list of notes for that task
+    task_notes = defaultdict(list)
+    for note in notes:
+        task_notes[note[3]].append(note)  # note[3] is task_id
 
     today = datetime.now().date()
     buckets = {"Overdue": [], "Due Today": [], "Upcoming": [], "No Due Date": []}
@@ -348,6 +358,11 @@ def show_due():
             print(f"\n{label}")
             for t in buckets[label]:
                 print("  " + format_task(t))
+                # Show notes for this task if any exist
+                task_id = t[0]  # t[0] is task id
+                if task_id in task_notes:
+                    for note in task_notes[task_id]:
+                        print(format_note(note, indent="      "))  # 6 spaces for indentation
 
 def show_task():
     with sqlite3.connect(DB_FILE) as conn:

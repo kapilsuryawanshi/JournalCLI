@@ -1,0 +1,149 @@
+# Test Cases for jrnl Application
+
+## Basic Functionality Tests
+
+1. Add a task without due date
+   - Command: jrnl task "Test task"
+   - Expected: Task is created with today's date as due date
+
+2. Add a task with due date keyword
+   - Command: jrnl task "Test task @tomorrow"
+   - Expected: Task is created with tomorrow's date as due date
+
+3. Add a task with explicit due date
+   - Command: jrnl task "Test task @2025-12-25"
+   - Expected: Task is created with 2025-12-25 as due date
+
+4. Add multiple tasks at once
+   - Command: jrnl task "Task 1,Task 2 @tomorrow,Task 3 @eom"
+   - Expected: Three tasks are created with appropriate due dates
+
+5. Add a note without task association
+   - Command: jrnl note "Standalone note"
+   - Expected: Note is created without task association
+
+6. Add a note to a specific task
+   - Command: jrnl note 1 "Note for task 1"
+   - Expected: Note is created and linked to task ID 1
+
+7. Add a note to multiple tasks
+   - Command: jrnl note 1,2 "Note for tasks 1 and 2"
+   - Expected: Note is created and linked to both task IDs 1 and 2
+
+## Display Tests
+
+8. Default journal view shows tasks and notes correctly
+   - Setup: Create tasks and notes
+   - Command: jrnl
+   - Expected: Shows tasks and notes grouped by creation date, with notes indented under their tasks
+
+9. Task view shows all unfinished tasks
+   - Command: jrnl task
+   - Expected: Shows all tasks with status not equal to 'done'
+
+10. Note view shows all notes
+    - Command: jrnl note
+    - Expected: Shows all notes with their task associations if any
+
+11. Due view groups tasks by due date
+    - Command: jrnl due
+    - Expected: Shows tasks grouped as Overdue / Due Today / Upcoming / No Due Date
+
+12. Completed tasks view shows done tasks
+    - Command: jrnl done
+    - Expected: Shows all completed tasks grouped by completion date
+
+## Status Update Tests
+
+13. Mark task as done
+    - Command: jrnl done 1
+    - Expected: Task ID 1 status is updated to 'done' and completion date is set
+
+14. Mark task as doing
+    - Command: jrnl doing 1
+    - Expected: Task ID 1 status is updated to 'doing'
+
+15. Mark task as waiting
+    - Command: jrnl waiting 1
+    - Expected: Task ID 1 status is updated to 'waiting'
+
+16. Mark task as undone
+    - Command: jrnl undone 1
+    - Expected: Task ID 1 status is updated to 'todo' and completion date is cleared
+
+17. Mark task as done using shortcut
+    - Command: jrnl x 1
+    - Expected: Task ID 1 status is updated to 'done' and completion date is set
+
+## Due Date Update Tests
+
+18. Update due date with keyword
+    - Command: jrnl due 1 tomorrow
+    - Expected: Task ID 1 has its due date updated to tomorrow
+
+19. Update due date with explicit date
+    - Command: jrnl due 1 2025-12-25
+    - Expected: Task ID 1 has its due date updated to 2025-12-25
+
+## New Feature Tests (Due Command with Notes)
+
+20. Due view shows notes indented beneath their tasks
+    - Setup: Create a task and add a note to it
+    - Command: jrnl due
+    - Expected: Shows tasks grouped by due date, with notes indented beneath their associated tasks
+    - Status: PASSED - Implemented and tested
+
+21. Due view shows multiple notes indented beneath their tasks
+    - Setup: Create a task and add multiple notes to it
+    - Command: jrnl due
+    - Expected: Shows the task and all its notes indented beneath it
+    - Status: PASSED - Implemented and tested
+
+22. Due view correctly handles tasks with no notes
+    - Setup: Create a task without any notes
+    - Command: jrnl due
+    - Expected: Shows the task without any notes beneath it
+    - Status: PASSED - Implemented and tested
+
+23. Due view correctly handles standalone notes
+    - Note: Standalone notes (not associated with tasks) should not appear in the due view
+    - Status: PASSED - Verified (standalone notes don't appear in due view)
+
+## Recurring Tasks Tests
+
+24. Set task as recurring
+    - Command: jrnl recur 1 4w
+    - Expected: Task ID 1 is set to recur every 4 weeks
+
+25. Complete recurring task creates new task
+    - Setup: Create a recurring task
+    - Command: jrnl done 1
+    - Expected: Original task is marked as done and a new task is created with updated due date
+
+## Delete Tests
+
+26. Delete a task
+    - Command: jrnl rm t1
+    - Expected: Task ID 1 is deleted along with any associated notes
+
+27. Delete a note
+    - Command: jrnl rm n1
+    - Expected: Note ID 1 is deleted
+
+28. Delete multiple tasks and notes
+    - Command: jrnl rm t1,n1,t2,n2
+    - Expected: All specified tasks and notes are deleted
+
+## Alias Tests
+
+29. Use 't' alias for adding tasks
+    - Command: jrnl t "Test task"
+    - Expected: Task is created (same as using 'task')
+
+30. Use 'n' alias for adding notes
+    - Command: jrnl n "Test note"
+    - Expected: Note is created (same as using 'note')
+
+31. Use 'd' alias for due view
+    - Command: jrnl d
+    - Expected: Shows due view (same as using 'due')
