@@ -96,7 +96,7 @@ def format_task(task):
 
 def format_note(note, indent="    "):
     nid, text, creation_date, task_id = note
-    return indent + f"- {text} (id:{nid})"
+    return Fore.YELLOW + indent + f"- {text} (id:{nid})" + Style.RESET_ALL
 
 def format_note_for_due_view(note, indent="      "):
     nid, text, creation_date, task_id = note
