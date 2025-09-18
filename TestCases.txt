@@ -35,7 +35,7 @@
 8. Default journal view shows tasks and notes correctly
    - Setup: Create tasks and notes
    - Command: jrnl
-   - Expected: Shows tasks and notes grouped by creation date, with notes indented under their tasks
+   - Expected: Shows tasks and notes grouped by creation date, with notes indented under their tasks and displayed with yellow background
 
 9. Task view shows all unfinished tasks
    - Command: jrnl task
@@ -43,11 +43,11 @@
 
 10. Note view shows all notes
     - Command: jrnl note
-    - Expected: Shows all notes with their task associations if any
+    - Expected: Shows all notes with their task associations if any (without yellow background)
 
 11. Due view groups tasks by due date
     - Command: jrnl due
-    - Expected: Shows tasks grouped as Overdue / Due Today / Upcoming / No Due Date
+    - Expected: Shows tasks grouped as Overdue / Due Today / Upcoming / No Due Date, with notes displayed with yellow background
 
 12. Completed tasks view shows done tasks
     - Command: jrnl done
@@ -112,6 +112,12 @@
 24. Due view shows notes with yellow background
     - Setup: Create a task and add a note to it
     - Command: jrnl due
+    - Expected: Notes are displayed with yellow background for better visibility
+    - Status: PASSED - Implemented and tested
+
+25. Default journal view shows notes with yellow background
+    - Setup: Create a task and add a note to it
+    - Command: jrnl
     - Expected: Notes are displayed with yellow background for better visibility
     - Status: PASSED - Implemented and tested
 
