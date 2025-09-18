@@ -50,76 +50,86 @@
     - Command: jrnl due
     - Expected: Shows tasks grouped as Overdue / Due Today / Upcoming / No Due Date, with notes displayed with yellow foreground and "doing" tasks with yellow background, and waiting tasks with gray background
 
-12. Completed tasks view shows done tasks
-    - Command: jrnl done
-    - Expected: Shows all completed tasks grouped by completion date
+12. Status view shows tasks grouped by status
+    - Command: jrnl status
+    - Expected: Shows tasks grouped by status in order: Todo, Doing, Waiting (no Done tasks)
+
+13. Status view with alias
+    - Command: jrnl s
+    - Expected: Shows tasks grouped by status in order: Todo, Doing, Waiting (no Done tasks)
 
 ## Status Update Tests
 
-13. Mark task as done
+14. Mark task as done
     - Command: jrnl done 1
     - Expected: Task ID 1 status is updated to 'done' and completion date is set
 
-14. Mark task as doing
+15. Mark task as doing
     - Command: jrnl doing 1
     - Expected: Task ID 1 status is updated to 'doing'
 
-15. Mark task as waiting
+16. Mark task as waiting
     - Command: jrnl waiting 1
     - Expected: Task ID 1 status is updated to 'waiting'
 
-16. Mark task as undone
+17. Mark task as undone
     - Command: jrnl undone 1
     - Expected: Task ID 1 status is updated to 'todo' and completion date is cleared
 
-17. Mark task as done using shortcut
+18. Mark task as done using shortcut
     - Command: jrnl x 1
     - Expected: Task ID 1 status is updated to 'done' and completion date is set
 
 ## Due Date Update Tests
 
-18. Update due date with keyword
+19. Update due date with keyword
     - Command: jrnl due 1 tomorrow
     - Expected: Task ID 1 has its due date updated to tomorrow
 
-19. Update due date with explicit date
+20. Update due date with explicit date
     - Command: jrnl due 1 2025-12-25
     - Expected: Task ID 1 has its due date updated to 2025-12-25
 
 ## New Feature Tests (Due Command with Notes)
 
-20. Due view shows notes indented beneath their tasks
+21. Due view shows notes indented beneath their tasks
     - Setup: Create a task and add a note to it
     - Command: jrnl due
     - Expected: Shows tasks grouped by due date, with notes indented beneath their associated tasks
     - Status: PASSED - Implemented and tested
 
-21. Due view shows multiple notes indented beneath their tasks
+22. Due view shows multiple notes indented beneath their tasks
     - Setup: Create a task and add multiple notes to it
     - Command: jrnl due
     - Expected: Shows the task and all its notes indented beneath it
     - Status: PASSED - Implemented and tested
 
-22. Due view correctly handles tasks with no notes
+23. Due view correctly handles tasks with no notes
     - Setup: Create a task without any notes
     - Command: jrnl due
     - Expected: Shows the task without any notes beneath it
     - Status: PASSED - Implemented and tested
 
-23. Due view correctly handles standalone notes
+24. Due view correctly handles standalone notes
     - Note: Standalone notes (not associated with tasks) should not appear in the due view
     - Status: PASSED - Verified (standalone notes don't appear in due view)
 
-24. Due view shows notes with yellow foreground
+25. Due view shows notes with yellow foreground
     - Setup: Create a task and add a note to it
     - Command: jrnl due
     - Expected: Notes are displayed with yellow foreground for better visibility
     - Status: IMPLEMENTED - Colors may not display correctly in all terminals
 
-25. Default journal view shows notes with yellow foreground
+26. Default journal view shows notes with yellow foreground
     - Setup: Create a task and add a note to it
     - Command: jrnl
     - Expected: Notes are displayed with yellow foreground for better visibility
+    - Status: IMPLEMENTED - Colors may not display correctly in all terminals
+
+27. Tasks with "waiting" status have gray background
+    - Setup: Create a task and change its status to "waiting"
+    - Command: jrnl task, jrnl due
+    - Expected: Tasks with "waiting" status are displayed with gray background
     - Status: IMPLEMENTED - Colors may not display correctly in all terminals
 
 28. Tasks with "doing" status have yellow background
@@ -127,6 +137,16 @@
     - Command: jrnl due
     - Expected: Tasks with "doing" status are displayed with yellow background and black text
     - Status: IMPLEMENTED - Colors may not display correctly in all terminals
+
+29. Status view shows tasks grouped by status
+    - Command: jrnl status
+    - Expected: Shows tasks grouped by status in order: Todo, Doing, Waiting (no Done tasks)
+    - Status: IMPLEMENTED - Tested and working
+
+30. Status view with alias
+    - Command: jrnl s
+    - Expected: Shows tasks grouped by status in order: Todo, Doing, Waiting (no Done tasks)
+    - Status: IMPLEMENTED - Tested and working
 
 ## Recurring Tasks Tests
 

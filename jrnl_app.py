@@ -429,6 +429,39 @@ def show_completed_tasks():
         for task in grouped[completion_date]:
             print("  " + format_task(task))
 
+
+def show_tasks_by_status():
+    with sqlite3.connect(DB_FILE) as conn:
+        tasks = conn.execute("""
+            SELECT id, title, status, creation_date, due_date, completion_date, recur
+            FROM tasks 
+            WHERE status != 'done'
+            ORDER BY 
+                CASE status 
+                    WHEN 'todo' THEN 1
+                    WHEN 'doing' THEN 2
+                    WHEN 'waiting' THEN 3
+                    ELSE 4
+                END,
+                creation_date ASC, id ASC
+        """).fetchall()
+
+    # Group tasks by status
+    grouped = defaultdict(list)
+    for t in tasks:
+        grouped[t[2]].append(t)  # t[2] is status
+
+    # Display tasks grouped by status in the order: Todo, Doing, Waiting
+    status_order = ['todo', 'doing', 'waiting']
+    status_labels = {'todo': 'Todo', 'doing': 'Doing', 'waiting': 'Waiting'}
+    
+    for status in status_order:
+        if status in grouped and grouped[status]:
+            print(f"\n{status_labels[status]}")
+            for task in grouped[status]:
+                print("  " + format_task(task))
+
+
 # --- CLI Parser ---
 
 def main():
@@ -511,6 +544,8 @@ def main():
         show_note()
     elif cmd == "done" and not rest:  # Only if no additional arguments (to distinguish from 'done' status command)
         show_completed_tasks()
+    elif cmd in ["status", "s"]:
+        show_tasks_by_status()
     elif cmd in ["due", "d"]:
         if rest and all(c.isdigit() or c == "," for c in rest[0]):
             # Parse task IDs (supporting multiple IDs separated by commas)
@@ -613,6 +648,7 @@ COMMANDS:
     jrnl task (or t)        Show all unfinished tasks
     jrnl note (or n)        Show all notes
     jrnl done               Show all completed tasks grouped by completion date
+    jrnl status (or s)      Show tasks grouped by status (Todo, Doing, Waiting)
     jrnl due                Show tasks grouped by due date
     jrnl due <id>[,<id>...] <date>  Change due date for task(s)
     jrnl recur <id>[,<id>...] <Nd|Nw|Nm|Ny>  Make task(s) recurring
@@ -654,6 +690,7 @@ EXAMPLES:
     jrnl task
     jrnl note
     jrnl done
+    jrnl status
 """)
 
 if __name__ == "__main__":

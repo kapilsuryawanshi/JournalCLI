@@ -77,7 +77,17 @@ Build a lightweight, command-line journaling and task management application nam
          * `done` → green text
      * Notes indented under parent task: `<id>. <text>`.
 
-4. **View grouped by due date**
+6. **View tasks grouped by status**
+
+   ```
+   jrnl status
+   ```
+
+   * Shows tasks grouped by status in order: Todo, Doing, Waiting.
+   * Does not show Done tasks.
+   * Tasks are displayed with appropriate color coding (gray for waiting, yellow background for doing).
+
+7. **View grouped by due date**
 
    ```
    jrnl due
@@ -99,7 +109,17 @@ Build a lightweight, command-line journaling and task management application nam
    * Shows all tasks not marked `done`.
    * Tasks with "waiting" status are displayed with gray background.
 
-6. **View only notes**
+6. **View tasks grouped by status**
+
+   ```
+   jrnl status
+   ```
+
+   * Shows tasks grouped by status in order: Todo, Doing, Waiting.
+   * Does not show Done tasks.
+   * Tasks are displayed with appropriate color coding (gray for waiting, yellow background for doing).
+
+7. **View only notes**
 
    ```
    jrnl notes
