@@ -8,6 +8,4 @@ You must follow the Test Driven Development workflow described below to implemen
 6. Add or update code documentation for the code changes to improve the readability of the code.
 7. Execute all the test cases from TestCases.txt, to ensure a) the new implementation is perfectly working b) the existing implementation is still intact and no regression issues are introduced. If some test cases are failing then go back to step 3 above and implement the fix for code.
 8. Ensure the PRD.txt reflect the current applications product requirement document.
-
-
-
+9. Never delete or remove file jrnl.db which is the production database. You may take backup of this file, perform your testing and then restore this file from backup.
