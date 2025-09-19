@@ -55,10 +55,24 @@ def parse_due(keyword):
     elif keyword == "eoy":
         return today.replace(month=12, day=31)
     else:
-        try:
-            return datetime.strptime(keyword, "%Y-%m-%d").date()
-        except ValueError:
-            return today  # fallback
+        # Check for day names (monday, tuesday, etc.)
+        day_names = {
+            "monday": 0, "tuesday": 1, "wednesday": 2, "thursday": 3,
+            "friday": 4, "saturday": 5, "sunday": 6
+        }
+        keyword_lower = keyword.lower()
+        if keyword_lower in day_names:
+            target_weekday = day_names[keyword_lower]
+            days_ahead = (target_weekday - today.weekday() + 7) % 7
+            # If the day is today, move to next week
+            if days_ahead == 0:
+                days_ahead = 7
+            return today + timedelta(days=days_ahead)
+        else:
+            try:
+                return datetime.strptime(keyword, "%Y-%m-%d").date()
+            except ValueError:
+                return today  # fallback
 
 # --- Display Helpers ---
 
@@ -667,6 +681,7 @@ DATE FORMATS:
         eow         - End of current week (Saturday)
         eom         - End of current month
         eoy         - End of current year
+        monday-sunday - Next occurrence of the specified day
     
     Explicit dates:
         YYYY-MM-DD  - Specific date (e.g., 2025-12-25)
@@ -684,6 +699,7 @@ EXAMPLES:
     jrnl n 2 "Remember to check references"
     jrnl done 2
     jrnl due 1,2,3 eom
+    jrnl due 12,45 tuesday
     jrnl recur 2,3 4w
     jrnl rm t1,n2
     jrnl due

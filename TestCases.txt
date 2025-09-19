@@ -90,6 +90,14 @@
     - Command: jrnl due 1 2025-12-25
     - Expected: Task ID 1 has its due date updated to 2025-12-25
 
+21. Update due date with day name
+    - Command: jrnl due 1 tuesday
+    - Expected: Task ID 1 has its due date updated to next Tuesday
+
+22. Update due date with day name for multiple tasks
+    - Command: jrnl due 1,2,3 friday
+    - Expected: Task IDs 1, 2, and 3 have their due dates updated to next Friday
+
 ## New Feature Tests (Due Command with Notes)
 
 21. Due view shows notes indented beneath their tasks

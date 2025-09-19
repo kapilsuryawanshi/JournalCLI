@@ -43,7 +43,7 @@ Build a lightweight, command-line journaling and task management application nam
    * Each `<text>` is a task title.
    * A task title may include an optional due date keyword or explicit date using `@`:
 
-     * Keywords: `today`, `tomorrow`, `eow` (end of week), `eom` (end of month), `eoy` (end of year)
+     * Keywords: `today`, `tomorrow`, `eow` (end of week), `eom` (end of month), `eoy` (end of year), day names (monday, tuesday, etc.)
      * Example: `jrnl . "Submit report @tomorrow, Finish taxes @2025-10-15"`
 
 2. **Add notes**
@@ -149,7 +149,7 @@ Build a lightweight, command-line journaling and task management application nam
    ```
 
    * Changes due date for a task.
-   * Supports same keywords as task creation (`today`, `tomorrow`, `eow`, `eom`, `eoy`).
+   * Supports same keywords as task creation (`today`, `tomorrow`, `eow`, `eom`, `eoy`, day names).
 
 9. **Help**
 
