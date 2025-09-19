@@ -156,6 +156,10 @@
     - Expected: Shows tasks grouped by status in order: Todo, Doing, Waiting (no Done tasks)
     - Status: IMPLEMENTED - Tested and working
 
+31. Status view sorts tasks by due date within each status group
+    - Command: jrnl status
+    - Expected: Tasks within each status group (Todo, Doing, Waiting) are sorted by due date in ascending order
+
 ## Recurring Tasks Tests
 
 24. Set task as recurring

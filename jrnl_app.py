@@ -108,11 +108,7 @@ def format_task(task):
 
     return text + Style.RESET_ALL
 
-def format_note(note, indent="    "):
-    nid, text, creation_date, task_id = note
-    return Fore.YELLOW + indent + f"- {text} (id:{nid})" + Style.RESET_ALL
-
-def format_note_for_due_view(note, indent="      "):
+def format_note(note, indent="\t"):
     nid, text, creation_date, task_id = note
     return Fore.YELLOW + indent + f"- {text} (id:{nid})" + Style.RESET_ALL
 
@@ -329,15 +325,15 @@ def show_journal():
     for day in sorted(grouped.keys()):
         print(day)
         for task in grouped[day]["tasks"]:
-            print("  " + format_task(task))
+            print("\t" + format_task(task))
             # show notes for this task
             for n in notes:
                 if n[3] == task[0]:
-                    print(format_note(n, indent="      "))
+                    print(format_note(n, indent="\t\t"))
         # show standalone notes
         for n in grouped[day]["notes"]:
             if not n[3]:
-                print(format_note(n, indent="  "))
+                print(format_note(n, indent="\t"))
 
 def show_due():
     with sqlite3.connect(DB_FILE) as conn:
@@ -375,12 +371,12 @@ def show_due():
         if buckets[label]:
             print(f"\n{label}")
             for t in buckets[label]:
-                print("  " + format_task(t))
+                print("\t" + format_task(t))
                 # Show notes for this task if any exist
                 task_id = t[0]  # t[0] is task id
                 if task_id in task_notes:
                     for note in task_notes[task_id]:
-                        print(format_note_for_due_view(note, indent="      "))  # 6 spaces for indentation
+                        print(format_note(note, indent="\t\t"))  # 6 spaces for indentation
 
 def show_task():
     with sqlite3.connect(DB_FILE) as conn:
@@ -396,7 +392,7 @@ def show_task():
     for day in sorted(grouped.keys()):
         print(day)
         for task in grouped[day]:
-            print("  " + format_task(task))
+            print("\t" + format_task(task))
 
 def show_note():
     with sqlite3.connect(DB_FILE) as conn:
@@ -441,7 +437,7 @@ def show_completed_tasks():
     for completion_date in sorted(grouped.keys()):
         print(completion_date)
         for task in grouped[completion_date]:
-            print("  " + format_task(task))
+            print("\t" + format_task(task))
 
 
 def show_tasks_by_status():
@@ -457,7 +453,7 @@ def show_tasks_by_status():
                     WHEN 'waiting' THEN 3
                     ELSE 4
                 END,
-                creation_date ASC, id ASC
+                due_date ASC, id ASC
         """).fetchall()
 
     # Group tasks by status
@@ -473,7 +469,7 @@ def show_tasks_by_status():
         if status in grouped and grouped[status]:
             print(f"\n{status_labels[status]}")
             for task in grouped[status]:
-                print("  " + format_task(task))
+                print("\t" + format_task(task))
 
 
 # --- CLI Parser ---

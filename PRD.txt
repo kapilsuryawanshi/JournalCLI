@@ -85,6 +85,7 @@ Build a lightweight, command-line journaling and task management application nam
 
    * Shows tasks grouped by status in order: Todo, Doing, Waiting.
    * Does not show Done tasks.
+   * Tasks within each status group are sorted by due date in ascending order.
    * Tasks are displayed with appropriate color coding (gray for waiting, yellow background for doing).
 
 7. **View grouped by due date**
@@ -117,6 +118,7 @@ Build a lightweight, command-line journaling and task management application nam
 
    * Shows tasks grouped by status in order: Todo, Doing, Waiting.
    * Does not show Done tasks.
+   * Tasks within each status group are sorted by due date in ascending order.
    * Tasks are displayed with appropriate color coding (gray for waiting, yellow background for doing).
 
 7. **View only notes**
