@@ -730,6 +730,8 @@ def main():
     rest = args.args
 
     if cmd is None:
+        show_due()
+    elif cmd in ["page", "p"]:
         show_journal()
     elif cmd == "task" and rest:  # Only handle as add task command if there are arguments
         add_task(" ".join(rest).split(","))
@@ -855,7 +857,7 @@ def main():
                 print(f"Set recur pattern '{recur_pattern}' for {len(task_ids)} task(s)")
         else:
             print("Error: Please provide task IDs and a recur pattern (e.g., 4w, 2d, 1m, 1y)")
-    elif cmd in ["undone", "doing", "waiting"]:  # Removed "done" from here
+    elif cmd in ["waiting", "start", "restart"]:  # Removed "done" from here
         if rest:
             ids = []
             for arg in rest:
@@ -865,8 +867,9 @@ def main():
                     print(f"Error: Invalid task ID '{arg}'")
                     return
             if ids:
-                # "undone" should set status back to "todo"
-                status = "todo" if cmd == "undone" else cmd
+                # "restart" should set status back to "todo"
+                # "start" should set status to "doing"
+                status = "todo" if cmd == "restart" else ("doing" if cmd == "start" else cmd)
                 update_task_status(ids, status)
             else:
                 print("Error: Please provide valid task IDs")
@@ -910,14 +913,14 @@ def main():
         else:
             print("Error: Please provide search text")
     elif cmd in ["help", "h"]:
-        print("""
-jrnl - Command Line Journal and Task Manager
+        print("""jrnl - Command Line Journal and Task Manager
 
 USAGE:
     jrnl [command] [arguments...]
 
 COMMANDS:
-    jrnl                    Show journal (default view)
+    jrnl                    Show tasks grouped by due date (default view) (Overdue / Due Today / This Week / This Month / Future / No Due Date)
+    jrnl page (or p)        Show journal (grouped by creation date)
     jrnl task <text>[,<text>...]     Add tasks
     jrnl t <text>[,<text>...]        Add tasks (alias)
     jrnl note [<task id>[,<task id>...]] <text>  Add notes
@@ -929,8 +932,8 @@ COMMANDS:
     jrnl due                Show tasks grouped by due date (Overdue / Due Today / This Week / This Month / Future / No Due Date)
     jrnl due <id>[,<id>...] <date>  Change due date for task(s)
     jrnl recur <id>[,<id>...] <Nd|Nw|Nm|Ny>  Make task(s) recurring
-    jrnl undone <id>[,<id>...]    Mark tasks as not done
-    jrnl doing <id>[,<id>...]     Mark tasks as in progress
+    jrnl restart <id>[,<id>...]   Mark tasks as not done
+    jrnl start <id>[,<id>...]     Mark tasks as in progress
     jrnl waiting <id>[,<id>...]   Mark tasks as waiting
     jrnl done <id>[,<id>...]      Mark tasks as done
     jrnl x <id>[,<id>...]         Mark tasks as done (shortcut)
@@ -940,44 +943,6 @@ COMMANDS:
     jrnl edit n<id> <new text>   Edit note text
     jrnl rm t<id>[,n<id>...]      Delete tasks (t) or notes (n)
     jrnl help (or h)        Show this help message
-
-DATE FORMATS:
-    Keywords:
-        today       - Today's date
-        tomorrow    - Tomorrow's date
-        eow         - End of current week (Saturday)
-        eom         - End of current month
-        eoy         - End of current year
-        monday-sunday - Next occurrence of the specified day
-    
-    Explicit dates:
-        YYYY-MM-DD  - Specific date (e.g., 2025-12-25)
-    
-    Recur patterns:
-        Nd          - Every N days (N between 1-31)
-        Nw          - Every N weeks (N between 1-31)
-        Nm          - Every N months (N between 1-31)
-        Ny          - Every N years (N between 1-31)
-
-EXAMPLES:
-    jrnl task "Do homework @tomorrow,Finish report @2025-12-25"
-    jrnl t "Do homework @tomorrow,Finish report @2025-12-25"
-    jrnl note 2 "Remember to check references"
-    jrnl n 2 "Remember to check references"
-    jrnl done 2
-    jrnl due 1,2,3 eom
-    jrnl due 12,45 tuesday
-    jrnl recur 2,3 4w
-    jrnl rm t1,n2
-    jrnl due
-    jrnl task
-    jrnl note
-    jrnl done
-    jrnl status
-    jrnl find "important"
-    jrnl f "meeting"
-    jrnl edit t1 "New task title"
-    jrnl edit n1 "New note text"
 """)
 
 if __name__ == "__main__":
