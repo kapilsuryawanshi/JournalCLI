@@ -121,7 +121,7 @@ def format_task(task):
 
 def format_note(note, indent="\t"):
     nid, text, creation_date, task_id = note
-    return Fore.YELLOW + indent + f"- {text} (id:{nid})" + Style.RESET_ALL
+    return Fore.YELLOW + indent + f"- {text} (id:{nid}) ({creation_date})" + Style.RESET_ALL
 
 def search_tasks_and_notes(search_text):
     """Search for tasks and notes containing the search text"""
@@ -611,9 +611,9 @@ def show_note():
         for note in grouped[day]:
             nid, text, creation_date, task_id, task_title = note
             if task_id:
-                print(Fore.YELLOW + f"\t- {text} (id: {nid}) (for task: {task_id}. {task_title})" + Style.RESET_ALL)
+                print(Fore.YELLOW + f"\t- {text} (id: {nid}) ({creation_date}) (for task: {task_id}. {task_title})" + Style.RESET_ALL)
             else:
-                print(Fore.YELLOW + f"\t- {text} (id: {nid})" + Style.RESET_ALL)
+                print(Fore.YELLOW + f"\t- {text} (id: {nid}) ({creation_date})" + Style.RESET_ALL)
 
 def show_completed_tasks():
     with sqlite3.connect(DB_FILE) as conn:

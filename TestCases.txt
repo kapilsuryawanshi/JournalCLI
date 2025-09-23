@@ -406,3 +406,17 @@
 55. Edit with missing text
     - Command: jrnl edit t1
     - Expected: Error message indicating missing text
+
+## New Feature Tests (Note Creation Date Display)
+
+64. Notes display creation date
+    - Setup: Create a task and add a note to it
+    - Command: jrnl due
+    - Expected: Notes are displayed with their creation date in format (YYYY-MM-DD)
+    - Status: IMPLEMENTED - Tested and working
+
+65. Notes in all views display creation date
+    - Setup: Create a task and add a note to it
+    - Command: jrnl, jrnl task, jrnl note, jrnl done, jrnl status, jrnl due
+    - Expected: Notes are displayed with their creation date in all views
+    - Status: IMPLEMENTED - Tested and working
