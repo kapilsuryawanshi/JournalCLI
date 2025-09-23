@@ -94,7 +94,7 @@ Build a lightweight, command-line journaling and task management application nam
    jrnl due
    ```
 
-   * Groups tasks as: Overdue / Due Today / Upcoming / No Due Date.
+   * Groups tasks as: Overdue / Due Today / This Week / This Month / Future / No Due Date.
    * Sorted by due date within groups.
    * Shows notes indented beneath their associated tasks.
    * Notes are displayed with yellow foreground for better visibility.
@@ -128,6 +128,30 @@ Build a lightweight, command-line journaling and task management application nam
    ```
 
    * Shows all notes.
+
+8. **Search tasks and notes**
+
+   ```
+   jrnl find <text>
+   jrnl f <text>
+   ```
+
+   * Searches for tasks and notes containing the specified text.
+   * Shows matching tasks and notes in the same format as the default journal view.
+   * Search is case-insensitive.
+   * If no matches are found, shows a message indicating no results.
+
+9. **Edit tasks and notes**
+
+   ```
+   jrnl edit t<id> <new title>
+   jrnl edit n<id> <new text>
+   ```
+
+   * Edits the title of a task or the text of a note.
+   * `t<id>` specifies a task ID to edit.
+   * `n<id>` specifies a note ID to edit.
+   * `<new title>` or `<new text>` is the new content for the task or note.
 
 7. **Change task status**
 
@@ -174,6 +198,10 @@ jrnl due 1 eom
 jrnl due
 jrnl tasks
 jrnl notes
+jrnl find "important"
+jrnl f "meeting"
+jrnl edit t1 "New task title"
+jrnl edit n1 "New note text"
 jrnl help
 ```
 
@@ -181,10 +209,10 @@ jrnl help
 
 ### UX Considerations
 
-* Aliases: `t` = tasks, `n` = notes, `d` = due, `h` = help.
+* Aliases: `t` = tasks, `n` = notes, `d` = due, `f` = find, `h` = help.
 * Minimal color coding, only where it adds clarity (status + due state).
 * Keep commands terse; most operations should be single-line.
-* Default view = creation-date outline, for quick “what happened today.”
+* Default view = creation-date outline, for quick "what happened today."
 * Optional `due` view helps with forward-looking planning.
 
 ---

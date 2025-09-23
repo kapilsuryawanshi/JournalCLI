@@ -7,6 +7,17 @@ from colorama import Fore, Back, Style, init
 DB_FILE = "jrnl.db"
 init(autoreset=True)  # colorama setup
 
+# --- Date Helpers ---
+
+def format_date_with_day(date_str):
+    """Format a date string (YYYY-MM-DD) to include the day name"""
+    try:
+        date_obj = datetime.strptime(date_str, "%Y-%m-%d")
+        return date_obj.strftime("%A, %Y-%m-%d")
+    except ValueError:
+        # If parsing fails, return the original string
+        return date_str
+
 # --- DB Helpers ---
 
 def init_db():
@@ -100,17 +111,138 @@ def format_task(task):
     today = datetime.now().date()
     if status != "done":
         if due < today:
-            text += Fore.RED + f" (due: {due})"
+            text += Fore.RED + f" (due: {format_date_with_day(due_date)})"
         elif due == today:
-            text += Fore.CYAN + f" (due: {due})"
+            text += Fore.CYAN + f" (due: {format_date_with_day(due_date)})"
         else:
-            text += f" (due: {due})"
+            text += f" (due: {format_date_with_day(due_date)})"
 
     return text + Style.RESET_ALL
 
 def format_note(note, indent="\t"):
     nid, text, creation_date, task_id = note
     return Fore.YELLOW + indent + f"- {text} (id:{nid})" + Style.RESET_ALL
+
+def search_tasks_and_notes(search_text):
+    """Search for tasks and notes containing the search text"""
+    with sqlite3.connect(DB_FILE) as conn:
+        # Search in tasks (title column)
+        tasks = conn.execute(
+            """
+            SELECT id,title,status,creation_date,due_date,completion_date,recur 
+            FROM tasks 
+            WHERE title LIKE ? 
+            ORDER BY creation_date ASC,id ASC
+            """,
+            (f"%{search_text}%",)
+        ).fetchall()
+
+        # Search in notes (text column)
+        notes = conn.execute(
+            """
+            SELECT id,text,creation_date,task_id 
+            FROM notes 
+            WHERE text LIKE ? 
+            ORDER BY creation_date ASC,id ASC
+            """,
+            (f"%{search_text}%",)
+        ).fetchall()
+
+    # Group by creation_date
+    grouped = defaultdict(lambda: {"tasks": [], "notes": []})
+    
+    # Add tasks to grouped dict
+    for t in tasks:
+        grouped[t[3]]["tasks"].append(t)  # t[3] is creation_date
+    
+    # Add notes to grouped dict
+    for n in notes:
+        if n[3]:  # attached to task
+            # We'll handle these under task display
+            pass
+        else:
+            grouped[n[2]]["notes"].append(n)  # n[2] is creation_date
+
+    # Get all notes that are attached to tasks (we need to show them with their tasks)
+    # Also get tasks that have notes matching the search term but the task title doesn't match
+    task_ids_from_notes = [note[3] for note in notes if note[3]]  # task_id for attached notes
+    task_ids_from_tasks = [task[0] for task in tasks]  # id for matching tasks
+    
+    # Get all unique task IDs we need to display
+    all_task_ids = list(set(task_ids_from_notes + task_ids_from_tasks))
+    
+    # Get the actual task records for those IDs
+    if all_task_ids:
+        with sqlite3.connect(DB_FILE) as conn:
+            task_query = """
+                SELECT id,title,status,creation_date,due_date,completion_date,recur 
+                FROM tasks 
+                WHERE id IN ({})
+                ORDER BY creation_date ASC,id ASC
+            """.format(",".join("?" * len(all_task_ids)))
+            all_tasks = conn.execute(task_query, all_task_ids).fetchall()
+            
+            # Update grouped with all tasks (in case some were missing)
+            for t in all_tasks:
+                grouped[t[3]]["tasks"].append(t)  # t[3] is creation_date
+            
+            # Remove duplicates
+            for day in grouped:
+                # Remove duplicate tasks
+                seen_task_ids = set()
+                unique_tasks = []
+                for t in grouped[day]["tasks"]:
+                    if t[0] not in seen_task_ids:
+                        unique_tasks.append(t)
+                        seen_task_ids.add(t[0])
+                grouped[day]["tasks"] = unique_tasks
+
+    return grouped, tasks, notes
+
+def display_search_results(grouped):
+    """Display search results in the same format as the default journal view"""
+    has_results = any(grouped[day]["tasks"] or grouped[day]["notes"] for day in grouped)
+    
+    if not has_results:
+        print("No matching tasks or notes found.")
+        return
+
+    # Get all tasks and notes to properly display attached notes
+    with sqlite3.connect(DB_FILE) as conn:
+        all_tasks = conn.execute(
+            "SELECT id,title,status,creation_date,due_date,completion_date,recur FROM tasks ORDER BY creation_date ASC,id ASC"
+        ).fetchall()
+        all_notes = conn.execute(
+            "SELECT id,text,creation_date,task_id FROM notes ORDER BY creation_date ASC,id ASC"
+        ).fetchall()
+
+    # Create a mapping of task_id to list of notes for that task
+    task_notes = defaultdict(list)
+    for note in all_notes:
+        if note[3]:  # note[3] is task_id
+            task_notes[note[3]].append(note)
+
+    for day in sorted(grouped.keys()):
+        tasks_for_day = grouped[day]["tasks"]
+        notes_for_day = grouped[day]["notes"]
+        
+        if tasks_for_day or notes_for_day:
+            print()
+            print(format_date_with_day(day))
+            
+            # Display tasks
+            for task in tasks_for_day:
+                print("\t" + format_task(task))
+                # Show notes for this task
+                task_id = task[0]  # task[0] is task id
+                if task_id in task_notes:
+                    for note in task_notes[task_id]:
+                        print(format_note(note, indent="\t\t"))
+            
+            # Display standalone notes
+            for note in notes_for_day:
+                if not note[3]:  # note[3] is task_id, only show standalone notes
+                    print(format_note(note, indent="\t"))
 
 # --- Command Handlers ---
 
@@ -270,6 +402,40 @@ def set_task_recur(task_ids, recur_pattern):
             )
     return True
 
+def edit_task(task_id, new_title):
+    """Edit the title of a task"""
+    with sqlite3.connect(DB_FILE) as conn:
+        # Check if task exists
+        cursor = conn.execute("SELECT id FROM tasks WHERE id=?", (task_id,))
+        if not cursor.fetchone():
+            print(f"Error: Task with ID {task_id} not found")
+            return False
+        
+        # Update the task title
+        conn.execute(
+            "UPDATE tasks SET title=? WHERE id=?",
+            (new_title, task_id)
+        )
+        print(f"Updated task {task_id} title to: {new_title}")
+        return True
+
+def edit_note(note_id, new_text):
+    """Edit the text of a note"""
+    with sqlite3.connect(DB_FILE) as conn:
+        # Check if note exists
+        cursor = conn.execute("SELECT id FROM notes WHERE id=?", (note_id,))
+        if not cursor.fetchone():
+            print(f"Error: Note with ID {note_id} not found")
+            return False
+        
+        # Update the note text
+        conn.execute(
+            "UPDATE notes SET text=? WHERE id=?",
+            (new_text, note_id)
+        )
+        print(f"Updated note {note_id} text to: {new_text}")
+        return True
+
 def delete_task(task_ids):
     """Delete tasks from the database"""
     deleted_count = 0
@@ -323,7 +489,8 @@ def show_journal():
             grouped[n[2]]["notes"].append(n)
 
     for day in sorted(grouped.keys()):
-        print(day)
+        print()
+        print(format_date_with_day(day))
         for task in grouped[day]["tasks"]:
             print("\t" + format_task(task))
             # show notes for this task
@@ -352,7 +519,15 @@ def show_due():
         task_notes[note[3]].append(note)  # note[3] is task_id
 
     today = datetime.now().date()
-    buckets = {"Overdue": [], "Due Today": [], "Upcoming": [], "No Due Date": []}
+    # Calculate the end of this week (Sunday) and end of this month
+    end_of_week = today + timedelta(days=(6 - today.weekday()))
+    # For end of month, we get the last day of the current month
+    if today.month == 12:
+        end_of_month = today.replace(year=today.year + 1, month=1, day=1) - timedelta(days=1)
+    else:
+        end_of_month = today.replace(month=today.month + 1, day=1) - timedelta(days=1)
+    
+    buckets = {"Overdue": [], "Due Today": [], "This Week": [], "This Month": [], "Future": [], "No Due Date": []}
 
     for t in tasks:
         # t[4] is due_date
@@ -362,12 +537,17 @@ def show_due():
                 buckets["Overdue"].append(t)
             elif due == today:
                 buckets["Due Today"].append(t)
+            elif due <= end_of_week:
+                buckets["This Week"].append(t)
+            elif due <= end_of_month:
+                buckets["This Month"].append(t)
             else:
-                buckets["Upcoming"].append(t)
+                buckets["Future"].append(t)
         else:
             buckets["No Due Date"].append(t)
 
-    for label in ["Overdue", "Due Today", "Upcoming", "No Due Date"]:
+    # Updated order: Overdue, Due Today, This Week, This Month, Future, No Due Date
+    for label in ["Overdue", "Due Today", "This Week", "This Month", "Future", "No Due Date"]:
         if buckets[label]:
             print(f"\n{label}")
             for t in buckets[label]:
@@ -383,6 +563,16 @@ def show_task():
         tasks = conn.execute(
             "SELECT id,title,status,creation_date,due_date,completion_date,recur FROM tasks WHERE status != 'done' ORDER BY creation_date ASC"
         ).fetchall()
+        
+        # Get all notes for tasks that will be displayed
+        notes = conn.execute(
+            "SELECT id,text,creation_date,task_id FROM notes WHERE task_id IN (SELECT id FROM tasks WHERE status != 'done') ORDER BY creation_date ASC,id ASC"
+        ).fetchall()
+
+    # Create a mapping of task_id to list of notes for that task
+    task_notes = defaultdict(list)
+    for note in notes:
+        task_notes[note[3]].append(note)  # note[3] is task_id
 
     # Group tasks by creation_date
     grouped = defaultdict(list)
@@ -390,9 +580,15 @@ def show_task():
         grouped[t[3]].append(t)  # t[3] is creation_date
 
     for day in sorted(grouped.keys()):
-        print(day)
+        print()
+        print(format_date_with_day(day))
         for task in grouped[day]:
             print("\t" + format_task(task))
+            # Show notes for this task if any exist
+            task_id = task[0]  # task[0] is task id
+            if task_id in task_notes:
+                for note in task_notes[task_id]:
+                    print(format_note(note, indent="\t\t"))  # 6 spaces for indentation
 
 def show_note():
     with sqlite3.connect(DB_FILE) as conn:
@@ -410,13 +606,14 @@ def show_note():
         grouped[n[2]].append(n)  # n[2] is creation_date
 
     for day in sorted(grouped.keys()):
-        print(day)
+        print()
+        print(format_date_with_day(day))
         for note in grouped[day]:
             nid, text, creation_date, task_id, task_title = note
             if task_id:
-                print(Fore.YELLOW + f"  - {text} (id: {nid}) (for task: {task_id}. {task_title})" + Style.RESET_ALL)
+                print(Fore.YELLOW + f"\t- {text} (id: {nid}) (for task: {task_id}. {task_title})" + Style.RESET_ALL)
             else:
-                print(Fore.YELLOW + f"  - {text} (id: {nid})" + Style.RESET_ALL)
+                print(Fore.YELLOW + f"\t- {text} (id: {nid})" + Style.RESET_ALL)
 
 def show_completed_tasks():
     with sqlite3.connect(DB_FILE) as conn:
@@ -426,6 +623,24 @@ def show_completed_tasks():
             WHERE status = 'done' AND completion_date IS NOT NULL
             ORDER BY completion_date ASC, id ASC
         """).fetchall()
+        
+        # Get all notes for tasks that will be displayed
+        if tasks:
+            task_ids = [str(task[0]) for task in tasks]
+            notes_query = """
+                SELECT id, text, creation_date, task_id 
+                FROM notes 
+                WHERE task_id IN ({})
+                ORDER BY creation_date ASC, id ASC
+            """.format(",".join("?" * len(task_ids)))
+            notes = conn.execute(notes_query, task_ids).fetchall()
+        else:
+            notes = []
+
+    # Create a mapping of task_id to list of notes for that task
+    task_notes = defaultdict(list)
+    for note in notes:
+        task_notes[note[3]].append(note)  # note[3] is task_id
     
     # Group tasks by completion date
     grouped = defaultdict(list)
@@ -435,9 +650,15 @@ def show_completed_tasks():
     
     # Display tasks grouped by completion date
     for completion_date in sorted(grouped.keys()):
-        print(completion_date)
+        print()
+        print(format_date_with_day(completion_date))
         for task in grouped[completion_date]:
             print("\t" + format_task(task))
+            # Show notes for this task if any exist
+            task_id = task[0]  # task[0] is task id
+            if task_id in task_notes:
+                for note in task_notes[task_id]:
+                    print(format_note(note, indent="\t\t"))  # 6 spaces for indentation
 
 
 def show_tasks_by_status():
@@ -455,6 +676,24 @@ def show_tasks_by_status():
                 END,
                 due_date ASC, id ASC
         """).fetchall()
+        
+        # Get all notes for tasks that will be displayed
+        if tasks:
+            task_ids = [str(task[0]) for task in tasks]
+            notes_query = """
+                SELECT id, text, creation_date, task_id 
+                FROM notes 
+                WHERE task_id IN ({})
+                ORDER BY creation_date ASC, id ASC
+            """.format(",".join("?" * len(task_ids)))
+            notes = conn.execute(notes_query, task_ids).fetchall()
+        else:
+            notes = []
+
+    # Create a mapping of task_id to list of notes for that task
+    task_notes = defaultdict(list)
+    for note in notes:
+        task_notes[note[3]].append(note)  # note[3] is task_id
 
     # Group tasks by status
     grouped = defaultdict(list)
@@ -470,6 +709,11 @@ def show_tasks_by_status():
             print(f"\n{status_labels[status]}")
             for task in grouped[status]:
                 print("\t" + format_task(task))
+                # Show notes for this task if any exist
+                task_id = task[0]  # task[0] is task id
+                if task_id in task_notes:
+                    for note in task_notes[task_id]:
+                        print(format_note(note, indent="\t\t"))  # 6 spaces for indentation
 
 
 # --- CLI Parser ---
@@ -519,6 +763,22 @@ def main():
                 add_note([], text)
             else:
                 print("Error: Please provide note text")
+    elif cmd == "edit":
+        if rest and len(rest) >= 2:
+            item_identifier = rest[0]
+            new_text = " ".join(rest[1:])
+            
+            # Check if the identifier starts with 't' (task) or 'n' (note)
+            if item_identifier.startswith("t") and item_identifier[1:].isdigit():
+                task_id = int(item_identifier[1:])
+                edit_task(task_id, new_text)
+            elif item_identifier.startswith("n") and item_identifier[1:].isdigit():
+                note_id = int(item_identifier[1:])
+                edit_note(note_id, new_text)
+            else:
+                print("Error: Invalid format. Use 't<ID>' for tasks or 'n<ID>' for notes")
+        else:
+            print("Error: Please provide an item identifier and new text")
     elif cmd == "rm":
         if rest:
             task_ids = []
@@ -642,6 +902,13 @@ def main():
                 print("Error: Please provide valid task IDs")
         else:
             print("Error: Please provide task IDs")
+    elif cmd in ["find", "f"]:
+        if rest:
+            search_text = " ".join(rest)
+            grouped, tasks, notes = search_tasks_and_notes(search_text)
+            display_search_results(grouped)
+        else:
+            print("Error: Please provide search text")
     elif cmd in ["help", "h"]:
         print("""
 jrnl - Command Line Journal and Task Manager
@@ -659,7 +926,7 @@ COMMANDS:
     jrnl note (or n)        Show all notes
     jrnl done               Show all completed tasks grouped by completion date
     jrnl status (or s)      Show tasks grouped by status (Todo, Doing, Waiting)
-    jrnl due                Show tasks grouped by due date
+    jrnl due                Show tasks grouped by due date (Overdue / Due Today / This Week / This Month / Future / No Due Date)
     jrnl due <id>[,<id>...] <date>  Change due date for task(s)
     jrnl recur <id>[,<id>...] <Nd|Nw|Nm|Ny>  Make task(s) recurring
     jrnl undone <id>[,<id>...]    Mark tasks as not done
@@ -667,6 +934,10 @@ COMMANDS:
     jrnl waiting <id>[,<id>...]   Mark tasks as waiting
     jrnl done <id>[,<id>...]      Mark tasks as done
     jrnl x <id>[,<id>...]         Mark tasks as done (shortcut)
+    jrnl find <text>        Search for tasks and notes containing text
+    jrnl f <text>           Search for tasks and notes containing text (alias)
+    jrnl edit t<id> <new title>  Edit task title
+    jrnl edit n<id> <new text>   Edit note text
     jrnl rm t<id>[,n<id>...]      Delete tasks (t) or notes (n)
     jrnl help (or h)        Show this help message
 
@@ -703,6 +974,10 @@ EXAMPLES:
     jrnl note
     jrnl done
     jrnl status
+    jrnl find "important"
+    jrnl f "meeting"
+    jrnl edit t1 "New task title"
+    jrnl edit n1 "New note text"
 """)
 
 if __name__ == "__main__":

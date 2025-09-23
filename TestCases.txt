@@ -48,7 +48,7 @@
 
 11. Due view groups tasks by due date
     - Command: jrnl due
-    - Expected: Shows tasks grouped as Overdue / Due Today / Upcoming / No Due Date, with notes displayed with yellow foreground and "doing" tasks with yellow background, and waiting tasks with gray background
+    - Expected: Shows tasks grouped as Overdue / Due Today / This Week / This Month / Future / No Due Date, with notes displayed with yellow foreground and "doing" tasks with yellow background, and waiting tasks with gray background
 
 12. Status view shows tasks grouped by status
     - Command: jrnl status
@@ -146,19 +146,189 @@
     - Expected: Tasks with "doing" status are displayed with yellow background and black text
     - Status: IMPLEMENTED - Colors may not display correctly in all terminals
 
-29. Status view shows tasks grouped by status
-    - Command: jrnl status
-    - Expected: Shows tasks grouped by status in order: Todo, Doing, Waiting (no Done tasks)
+## New Feature Tests (Enhanced Due Command Grouping)
+
+56. Due view groups tasks by detailed due date categories
+    - Command: jrnl due
+    - Expected: Shows tasks grouped as Overdue / Due Today / This Week / This Month / Future / No Due Date
     - Status: IMPLEMENTED - Tested and working
 
-30. Status view with alias
-    - Command: jrnl s
-    - Expected: Shows tasks grouped by status in order: Todo, Doing, Waiting (no Done tasks)
+57. Due view shows overdue tasks in Overdue section
+    - Setup: Create a task with a due date in the past
+    - Command: jrnl due
+    - Expected: Task appears in the Overdue section
     - Status: IMPLEMENTED - Tested and working
 
-31. Status view sorts tasks by due date within each status group
+58. Due view shows today's tasks in Due Today section
+    - Setup: Create a task with today's due date
+    - Command: jrnl due
+    - Expected: Task appears in the Due Today section
+    - Status: IMPLEMENTED - Tested and working
+
+59. Due view shows this week's tasks in This Week section
+    - Setup: Create a task with a due date later this week (but not today)
+    - Command: jrnl due
+    - Expected: Task appears in the This Week section
+    - Status: IMPLEMENTED - Tested and working
+
+60. Due view shows this month's tasks in This Month section
+    - Setup: Create a task with a due date later this month (but not this week)
+    - Command: jrnl due
+    - Expected: Task appears in the This Month section
+    - Status: IMPLEMENTED - Tested and working
+
+61. Due view shows future tasks in Future section
+    - Setup: Create a task with a due date next month or later
+    - Command: jrnl due
+    - Expected: Task appears in the Future section
+    - Status: IMPLEMENTED - Tested and working
+
+62. Due view shows tasks with no due date in No Due Date section
+    - Setup: Create a task without a due date
+    - Command: jrnl due
+    - Expected: Task appears in the No Due Date section
+    - Status: IMPLEMENTED - Tested and working (Note: Tasks without explicit due dates default to today's date)
+
+63. Due view with alias shows enhanced grouping
+    - Command: jrnl d
+    - Expected: Shows tasks grouped as Overdue / Due Today / This Week / This Month / Future / No Due Date
+    - Status: IMPLEMENTED - Tested and working
+
+## New Feature Tests (Find/Search Functionality)
+
+42. Search for text in tasks and notes
+    - Setup: Create tasks and notes with various content
+    - Command: jrnl find "search term"
+    - Expected: Shows tasks and notes matching the search term, formatted like the default journal view
+
+43. Search using alias command
+    - Setup: Create tasks and notes with various content
+    - Command: jrnl f "search term"
+    - Expected: Shows tasks and notes matching the search term, formatted like the default journal view
+
+44. Search with no matches
+    - Command: jrnl find "nonexistent term"
+    - Expected: Shows no results message or empty output
+
+45. Search with case sensitivity
+    - Setup: Create a task with "Important Task" title
+    - Command: jrnl find "important"
+    - Expected: Should find the task if search is case-insensitive
+
+46. Search matches in task titles
+    - Setup: Create tasks with titles containing specific terms
+    - Command: jrnl find "specific term"
+    - Expected: Shows only tasks with titles containing the search term
+
+47. Search matches in note text
+    - Setup: Create notes with text containing specific terms
+    - Command: jrnl find "specific term"
+    - Expected: Shows only notes with text containing the search term
+
+48. Search matches both tasks and notes
+    - Setup: Create tasks and notes both containing the same search term
+    - Command: jrnl find "common term"
+    - Expected: Shows both matching tasks and notes, properly formatted
+
+## New Feature Tests (Task and Done Views with Notes)
+
+32. Task view shows notes indented beneath their tasks
+    - Setup: Create a task and add a note to it
+    - Command: jrnl task
+    - Expected: Shows all unfinished tasks, with notes indented beneath their associated tasks
+    - Status: IMPLEMENTED - Tested and working
+
+33. Task view shows multiple notes indented beneath their tasks
+    - Setup: Create a task and add multiple notes to it
+    - Command: jrnl task
+    - Expected: Shows the task and all its notes indented beneath it
+    - Status: IMPLEMENTED - Tested and working
+
+34. Task view correctly handles tasks with no notes
+    - Setup: Create a task without any notes
+    - Command: jrnl task
+    - Expected: Shows the task without any notes beneath it
+    - Status: IMPLEMENTED - Tested and working
+
+35. Done view shows notes indented beneath their tasks
+    - Setup: Create a task, add a note to it, and mark it as done
+    - Command: jrnl done
+    - Expected: Shows all completed tasks grouped by completion date, with notes indented beneath their associated tasks
+    - Status: IMPLEMENTED - Tested and working
+
+36. Done view shows multiple notes indented beneath their tasks
+    - Setup: Create a task, add multiple notes to it, and mark it as done
+    - Command: jrnl done
+    - Expected: Shows the task and all its notes indented beneath it
+    - Status: IMPLEMENTED - Tested and working
+
+37. Done view correctly handles tasks with no notes
+    - Setup: Create a task without any notes and mark it as done
+    - Command: jrnl done
+    - Expected: Shows the task without any notes beneath it
+    - Status: IMPLEMENTED - Tested and working
+
+38. Status view shows notes indented beneath their tasks
+    - Setup: Create a task, add a note to it
     - Command: jrnl status
-    - Expected: Tasks within each status group (Todo, Doing, Waiting) are sorted by due date in ascending order
+    - Expected: Shows all unfinished tasks grouped by status, with notes indented beneath their associated tasks
+    - Status: IMPLEMENTED - Tested and working
+
+39. Status view shows multiple notes indented beneath their tasks
+    - Setup: Create a task, add multiple notes to it
+    - Command: jrnl status
+    - Expected: Shows the task and all its notes indented beneath it
+    - Status: IMPLEMENTED - Tested and working
+
+40. Status view correctly handles tasks with no notes
+    - Setup: Create a task without any notes
+    - Command: jrnl status
+    - Expected: Shows the task without any notes beneath it
+    - Status: IMPLEMENTED - Tested and working
+
+## New Feature Tests (Date Display with Day Names)
+
+41. Default journal view shows dates with day names
+    - Setup: Create tasks and notes
+    - Command: jrnl
+    - Expected: Dates are displayed with day names (e.g., "Friday, 2025-09-19")
+    - Status: IMPLEMENTED - Tested and working
+
+42. Task view shows dates with day names
+    - Setup: Create tasks
+    - Command: jrnl task
+    - Expected: Dates are displayed with day names (e.g., "Friday, 2025-09-19")
+    - Status: IMPLEMENTED - Tested and working
+
+43. Note view shows dates with day names
+    - Setup: Create notes
+    - Command: jrnl note
+    - Expected: Dates are displayed with day names (e.g., "Friday, 2025-09-19")
+    - Status: IMPLEMENTED - Tested and working
+
+44. Done view shows dates with day names
+    - Setup: Create tasks and mark them as done
+    - Command: jrnl done
+    - Expected: Dates are displayed with day names (e.g., "Friday, 2025-09-19")
+    - Status: IMPLEMENTED - Tested and working
+
+45. Task view shows due dates with day names
+    - Setup: Create tasks with due dates
+    - Command: jrnl task
+    - Expected: Due dates are displayed with day names (e.g., "due: Monday, 2025-09-22")
+    - Status: IMPLEMENTED - Tested and working
+
+46. Default journal view shows due dates with day names
+    - Setup: Create tasks with due dates
+    - Command: jrnl
+    - Expected: Due dates are displayed with day names (e.g., "due: Monday, 2025-09-22")
+    - Status: IMPLEMENTED - Tested and working
+
+47. Done view shows due dates with day names
+    - Setup: Create tasks with due dates and mark them as done
+    - Command: jrnl done
+    - Expected: Due dates are displayed with day names (e.g., "due: Monday, 2025-09-22")
+    - Status: IMPLEMENTED - Tested and working
 
 ## Recurring Tasks Tests
 
@@ -195,6 +365,44 @@
     - Command: jrnl n "Test note"
     - Expected: Note is created (same as using 'note')
 
-31. Use 'd' alias for due view
+30. Use 'd' alias for due view
     - Command: jrnl d
     - Expected: Shows due view (same as using 'due')
+
+## New Feature Tests (Edit Functionality)
+
+48. Edit task title
+    - Setup: Create a task with a specific title
+    - Command: jrnl edit t1 "New task title"
+    - Expected: Task ID 1 has its title updated to "New task title"
+
+49. Edit note text
+    - Setup: Create a note with specific text
+    - Command: jrnl edit n1 "New note text"
+    - Expected: Note ID 1 has its text updated to "New note text"
+
+50. Edit task title with spaces
+    - Setup: Create a task
+    - Command: jrnl edit t1 "Task title with multiple words"
+    - Expected: Task ID 1 has its title updated correctly
+
+51. Edit note text with spaces
+    - Setup: Create a note
+    - Command: jrnl edit n1 "Note text with multiple words"
+    - Expected: Note ID 1 has its text updated correctly
+
+52. Edit non-existent task
+    - Command: jrnl edit t999 "New title"
+    - Expected: Error message indicating task not found
+
+53. Edit non-existent note
+    - Command: jrnl edit n999 "New text"
+    - Expected: Error message indicating note not found
+
+54. Edit with missing ID
+    - Command: jrnl edit t "New title"
+    - Expected: Error message indicating invalid format
+
+55. Edit with missing text
+    - Command: jrnl edit t1
+    - Expected: Error message indicating missing text
