@@ -159,14 +159,15 @@ Build a lightweight, command-line journaling and task management application nam
    jrnl undone <id>[,<id>...]
    jrnl doing <id>[,<id>...]
    jrnl waiting <id>[,<id>...]
-   jrnl done <id>[,<id>...]
+   jrnl done <id>[,<id>...] <note text>
    ```
 
    * Updates task status.
    * `undone` resets a completed task back to `todo`.
+   * `done` marks tasks as completed and requires a note to be added to the completed tasks.
    * Shortcuts:
 
-     * `jrnl x <id>` = mark task as `done`.
+     * `jrnl x <id>[,<id>...] <note text>` = mark task as `done` with a note.
 
 8. **Adjust due date**
 

@@ -289,7 +289,7 @@ def add_note(task_ids, text):
         else:
             print("Added standalone note")
 
-def update_task_status(task_ids, status):
+def update_task_status(task_ids, status, note_text=None):
     updated_count = 0
     with sqlite3.connect(DB_FILE) as conn:
         for tid in task_ids:
@@ -318,6 +318,13 @@ def update_task_status(task_ids, status):
                     (status, today, tid)
                 )
                 updated_count += 1
+                
+                # Add note to the completed task if provided
+                if note_text:
+                    conn.execute(
+                        "INSERT INTO notes (text,creation_date,task_id) VALUES (?,?,?)",
+                        (note_text, today, tid)
+                    )
             # If moving from done to another status, clear completion date
             elif status in ["todo", "doing", "waiting"]:
                 conn.execute(
@@ -799,6 +806,30 @@ def main():
         show_note()
     elif cmd == "done" and not rest:  # Only if no additional arguments (to distinguish from 'done' status command)
         show_completed_tasks()
+    elif cmd in ["done", "x"] and rest:
+        # Parse task IDs and note text
+        ids = []
+        note_text = ""
+        
+        # Look for task IDs in the arguments (numbers and commas)
+        for i, arg in enumerate(rest):
+            if all(c.isdigit() or c == "," for c in arg):
+                ids.extend([int(i) for i in arg.split(",")])
+            else:
+                # Everything after the task IDs is considered note text
+                note_text = " ".join(rest[i:])
+                break
+        
+        if not ids:
+            print("Error: Please provide valid task IDs and note text")
+            return
+            
+        if not note_text:
+            print("Error: Please provide a note for completing the task(s)")
+            return
+        
+        # Update task status and add the note
+        update_task_status(ids, "done", note_text)
     elif cmd in ["status", "s"]:
         show_tasks_by_status()
     elif cmd in ["due", "d"]:
@@ -858,21 +889,6 @@ def main():
                 print("Error: Please provide valid task IDs")
         else:
             print("Error: Please provide task IDs")
-    elif cmd in ["done", "x"]:  # Handle "done" status command
-        if rest:
-            ids = []
-            for arg in rest:
-                if all(c.isdigit() or c == "," for c in arg):
-                    ids.extend([int(i) for i in arg.split(",")])
-                else:
-                    print(f"Error: Invalid task ID '{arg}'")
-                    return
-            if ids:
-                update_task_status(ids, "done")
-            else:
-                print("Error: Please provide valid task IDs")
-        else:
-            print("Error: Please provide task IDs")
     elif cmd in ["find", "f"]:
         if rest:
             search_text = " ".join(rest)
@@ -901,7 +917,7 @@ COMMANDS:
     jrnl restart <id>[,<id>...]   Mark tasks as not done
     jrnl start <id>[,<id>...]     Mark tasks as in progress
     jrnl waiting <id>[,<id>...]   Mark tasks as waiting
-    jrnl done|x <id>[,<id>...]      Mark tasks as done
+    jrnl done|x <id>[,<id>...] <note text>      Mark tasks as done with a completion note
     jrnl find|f <text>        Search for tasks and notes containing text
     jrnl edit t<id> <new title>  Edit task title
     jrnl edit n<id> <new text>   Edit note text

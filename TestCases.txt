@@ -347,6 +347,33 @@
     - Command: jrnl rm t1
     - Expected: Task ID 1 is deleted along with any associated notes
 
+## Task Completion with Notes Tests
+
+66. Mark task as done with note
+    - Setup: Create a task with ID 1
+    - Command: jrnl done 1 "Completed with important note"
+    - Expected: Task ID 1 status is updated to 'done', completion date is set, and a note is added to the task
+    
+67. Mark task as done with note using shortcut
+    - Setup: Create a task with ID 1
+    - Command: jrnl x 1 "Completed with shortcut and note"
+    - Expected: Task ID 1 status is updated to 'done', completion date is set, and a note is added to the task
+    
+68. Mark multiple tasks as done with note
+    - Setup: Create tasks with IDs 1 and 2
+    - Command: jrnl done 1,2 "Completed multiple tasks with note"
+    - Expected: Both tasks' status updated to 'done', completion dates set, and notes added to both tasks
+    
+69. Attempt to mark task as done without note
+    - Setup: Create a task with ID 1
+    - Command: jrnl done 1
+    - Expected: Error message indicating that a note is required
+    
+70. Attempt to mark task as done with shortcut without note
+    - Setup: Create a task with ID 1
+    - Command: jrnl x 1
+    - Expected: Error message indicating that a note is required
+
 27. Delete a note
     - Command: jrnl rm n1
     - Expected: Note ID 1 is deleted
