@@ -299,13 +299,13 @@ def update_task_status(task_ids, status):
                 task = conn.execute(
                     "SELECT title, due_date, recur FROM tasks WHERE id=?", (tid,)
                 ).fetchone()
-                
+                today = datetime.now().date().strftime("%Y-%m-%d")                
                 if task and task[2]:  # If task has a recur pattern
                     # Create a new task with the same details but new due date
+
                     title, due_date, recur = task
-                    new_due_date = calculate_next_due_date(due_date, recur)
+                    new_due_date = calculate_next_due_date(today, recur)
                     
-                    today = datetime.now().date().strftime("%Y-%m-%d")
                     conn.execute(
                         "INSERT INTO tasks (title,status,creation_date,due_date,recur) VALUES (?,?,?,?,?)",
                         (title, "todo", today, new_due_date, recur)
@@ -313,7 +313,6 @@ def update_task_status(task_ids, status):
                     print(f"Created recurring task for '{title}'")
                 
                 # Set completion date for the original task
-                today = datetime.now().date().strftime("%Y-%m-%d")
                 conn.execute(
                     "UPDATE tasks SET status=?, completion_date=? WHERE id=?",
                     (status, today, tid)
@@ -733,25 +732,9 @@ def main():
         show_due()
     elif cmd in ["page", "p"]:
         show_journal()
-    elif cmd == "task" and rest:  # Only handle as add task command if there are arguments
+    elif cmd in ["task", "t"] and rest:  # Only handle as add task command if there are arguments
         add_task(" ".join(rest).split(","))
-    elif cmd == "t" and rest:  # Alias for adding tasks
-        add_task(" ".join(rest).split(","))
-    elif cmd == "note" and rest:  # Only handle as add note command if there are arguments
-        if all(c.isdigit() or c == "," for c in rest[0]):
-            ids = rest[0].split(",")
-            text = " ".join(rest[1:])
-            if text:
-                add_note([int(i) for i in ids], text)
-            else:
-                print("Error: Please provide note text")
-        else:
-            text = " ".join(rest)
-            if text:
-                add_note([], text)
-            else:
-                print("Error: Please provide note text")
-    elif cmd == "n" and rest:  # Alias for adding notes
+    elif cmd in ["note", "n"] and rest:  # Only handle as add note command if there are arguments
         if all(c.isdigit() or c == "," for c in rest[0]):
             ids = rest[0].split(",")
             text = " ".join(rest[1:])
@@ -875,22 +858,7 @@ def main():
                 print("Error: Please provide valid task IDs")
         else:
             print("Error: Please provide task IDs")
-    elif cmd == "done":  # Handle "done" status command
-        if rest:
-            ids = []
-            for arg in rest:
-                if all(c.isdigit() or c == "," for c in arg):
-                    ids.extend([int(i) for i in arg.split(",")])
-                else:
-                    print(f"Error: Invalid task ID '{arg}'")
-                    return
-            if ids:
-                update_task_status(ids, "done")
-            else:
-                print("Error: Please provide valid task IDs")
-        else:
-            print("Error: Please provide task IDs")
-    elif cmd == "x":
+    elif cmd in ["done", "x"]:  # Handle "done" status command
         if rest:
             ids = []
             for arg in rest:
@@ -920,29 +888,25 @@ USAGE:
 
 COMMANDS:
     jrnl                    Show tasks grouped by due date (default view) (Overdue / Due Today / This Week / This Month / Future / No Due Date)
-    jrnl page (or p)        Show journal (grouped by creation date)
-    jrnl task <text>[,<text>...]     Add tasks
-    jrnl t <text>[,<text>...]        Add tasks (alias)
-    jrnl note [<task id>[,<task id>...]] <text>  Add notes
-    jrnl n [<task id>[,<task id>...]] <text>     Add notes (alias)
-    jrnl task (or t)        Show all unfinished tasks
-    jrnl note (or n)        Show all notes
+    jrnl page|p        Show journal (grouped by creation date)
+    jrnl task|t <text>[,<text>...]     Add tasks
+    jrnl note|n [<task id>[,<task id>...]] <text>  Add notes
+    jrnl task|t        Show all unfinished tasks
+    jrnl note|n        Show all notes
     jrnl done               Show all completed tasks grouped by completion date
-    jrnl status (or s)      Show tasks grouped by status (Todo, Doing, Waiting)
-    jrnl due                Show tasks grouped by due date (Overdue / Due Today / This Week / This Month / Future / No Due Date)
+    jrnl status|s      Show tasks grouped by status (Todo, Doing, Waiting)
+    jrnl due|d                Show tasks grouped by due date (Overdue / Due Today / This Week / This Month / Future / No Due Date)
     jrnl due <id>[,<id>...] <date>  Change due date for task(s)
     jrnl recur <id>[,<id>...] <Nd|Nw|Nm|Ny>  Make task(s) recurring
     jrnl restart <id>[,<id>...]   Mark tasks as not done
     jrnl start <id>[,<id>...]     Mark tasks as in progress
     jrnl waiting <id>[,<id>...]   Mark tasks as waiting
-    jrnl done <id>[,<id>...]      Mark tasks as done
-    jrnl x <id>[,<id>...]         Mark tasks as done (shortcut)
-    jrnl find <text>        Search for tasks and notes containing text
-    jrnl f <text>           Search for tasks and notes containing text (alias)
+    jrnl done|x <id>[,<id>...]      Mark tasks as done
+    jrnl find|f <text>        Search for tasks and notes containing text
     jrnl edit t<id> <new title>  Edit task title
     jrnl edit n<id> <new text>   Edit note text
     jrnl rm t<id>[,n<id>...]      Delete tasks (t) or notes (n)
-    jrnl help (or h)        Show this help message
+    jrnl help|h        Show this help message
 """)
 
 if __name__ == "__main__":
