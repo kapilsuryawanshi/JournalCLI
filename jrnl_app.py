@@ -885,24 +885,55 @@ def main():
     elif cmd in ["task", "t"] and rest:  # Only handle as add task command if there are arguments
         add_task(" ".join(rest).split(","))
     elif cmd in ["note", "n"] and rest:  # Handle note commands with arguments
-        # Check if first argument is a single digit/number (for note lookup or linking)
+        # Check if first argument is a single digit/number (for note lookup)
         if len(rest) == 1 and rest[0].isdigit():
             # View specific note with links
             note_id = int(rest[0])
             show_note_details(note_id)
-        elif len(rest) >= 3 and rest[0] in ["link", "unlink"] and all(arg.isdigit() for arg in rest[1:3]):
-            # Handle linking/unlinking notes
-            action = rest[0]
-            try:
-                note1_id = int(rest[1])
-                note2_id = int(rest[2])
+        elif len(rest) >= 2 and rest[0].isdigit():
+            # Handle consolidated note edit command: jrnl note <id> edit [text:<text>] [link:<id>[,<id>,...]] [unlink:<id>[,<id>,...]]
+            note_id = int(rest[0])
+            if rest[1] == "edit":
+                # Parse additional arguments for editing (format: key:value)
+                new_text = None
+                link_ids = []
+                unlink_ids = []
                 
-                if action == "link":
-                    link_notes(note1_id, note2_id)
-                elif action == "unlink":
-                    unlink_notes(note1_id, note2_id)
-            except ValueError:
-                print("Error: Note IDs must be valid integers")
+                # Process each argument after "edit"
+                for i in range(2, len(rest)):
+                    arg = rest[i]
+                    
+                    if arg.startswith("text:"):
+                        # Extract text after "text:"
+                        new_text = arg[5:]  # Remove "text:" prefix
+                    
+                    elif arg.startswith("link:"):
+                        # Parse comma-separated list of IDs to link
+                        ids_str = arg[5:]  # Remove "link:" prefix
+                        ids = ids_str.split(",")
+                        link_ids = [int(id_str) for id_str in ids if id_str.isdigit()]
+                    
+                    elif arg.startswith("unlink:"):
+                        # Parse comma-separated list of IDs to unlink
+                        ids_str = arg[7:]  # Remove "unlink:" prefix
+                        ids = ids_str.split(",")
+                        unlink_ids = [int(id_str) for id_str in ids if id_str.isdigit()]
+                
+                # Perform operations in order: edit text, then unlink, then link
+                if new_text:
+                    edit_note(note_id, new_text)
+                
+                for unlink_id in unlink_ids:
+                    unlink_notes(note_id, unlink_id)
+                
+                for link_id in link_ids:
+                    link_notes(note_id, link_id)
+            else:
+                # Handle legacy format (if needed) or error
+                print(f"Error: Unknown command 'jrnl note {rest[0]} {rest[1]}'. Use 'edit' for editing notes.")
+        elif len(rest) >= 3 and rest[0] in ["link", "unlink"] and all(arg.isdigit() for arg in rest[1:3]):
+            # The old link/unlink commands have been replaced with the consolidated command
+            print("Error: The 'link' and 'unlink' commands have been removed. Use 'jrnl note <id> edit link:<id>[,<id>,...]' and 'jrnl note <id> edit unlink:<id>[,<id>,...]' instead.")
         elif all(c.isdigit() or c == "," for c in rest[0]):
             # Add note to tasks
             ids = rest[0].split(",")
@@ -923,15 +954,12 @@ def main():
             item_identifier = rest[0]
             new_text = " ".join(rest[1:])
             
-            # Check if the identifier starts with 't' (task) or 'n' (note)
+            # Check if the identifier starts with 't' (task)
             if item_identifier.startswith("t") and item_identifier[1:].isdigit():
                 task_id = int(item_identifier[1:])
                 edit_task(task_id, new_text)
-            elif item_identifier.startswith("n") and item_identifier[1:].isdigit():
-                note_id = int(item_identifier[1:])
-                edit_note(note_id, new_text)
             else:
-                print("Error: Invalid format. Use 't<ID>' for tasks or 'n<ID>' for notes")
+                print("Error: Invalid format. Use 't<ID>' for tasks. For notes, use 'jrnl note <id> edit -text <new text>'")
         else:
             print("Error: Please provide an item identifier and new text")
     elif cmd == "rm":
@@ -1072,8 +1100,7 @@ COMMANDS:
     jrnl note|n [<task id>[,<task id>...]] <text>  Add notes
     jrnl note|n        Show all notes
     jrnl note|n <id>          Show specific note with linked notes
-    jrnl note|n link <id1> <id2>      Link two notes together
-    jrnl note|n unlink <id1> <id2>    Unlink two notes
+    jrnl note|n <id> edit [text:<text>] [link:<id>[,<id>,...]] [unlink:<id>[,<id>,...]]  Edit note with optional text, linking, unlinking
     jrnl task|t        Show all unfinished tasks
     jrnl done               Show all completed tasks grouped by completion date
     jrnl status|s      Show tasks grouped by status (Todo, Doing, Waiting)
@@ -1086,7 +1113,6 @@ COMMANDS:
     jrnl done|x <id>[,<id>...] <note text>      Mark tasks as done with a completion note
     jrnl find|f <text>        Search for tasks and notes containing text
     jrnl edit t<id> <new title>  Edit task title
-    jrnl edit n<id> <new text>   Edit note text
     jrnl rm t<id>[,n<id>...]      Delete tasks (t) or notes (n)
     jrnl help|h        Show this help message
 """)
