@@ -236,12 +236,12 @@ def test_show_note_details_with_links():
         jrnl_app.show_note_details(note1_id)
     output = f.getvalue()
     
-    # Check that the note itself is displayed
-    assert f"Note {note1_id}: First note" in output
+    # Check that the note itself is displayed in the new consistent format
+    assert f"- First note (id:{note1_id})" in output
     
-    # Check that both linked notes are displayed
-    assert f"Note {note2_id}: Second note" in output
-    assert f"Note {note3_id}: Third note" in output
+    # Check that both linked notes are displayed in the new consistent format
+    assert f"- Second note (id:{note2_id})" in output
+    assert f"- Third note (id:{note3_id})" in output
 
 def test_show_note_details_no_links():
     """Test viewing a note that has no linked notes"""
@@ -260,8 +260,8 @@ def test_show_note_details_no_links():
         jrnl_app.show_note_details(note_id)
     output = f.getvalue()
     
-    # Check that the note itself is displayed
-    assert f"Note {note_id}: Single note" in output
+    # Check that the note itself is displayed in the new consistent format
+    assert f"- Single note (id:{note_id})" in output
     
     # Check that no linked notes message is displayed
     assert "No linked notes found." in output
@@ -351,11 +351,12 @@ def test_show_note_details_with_task():
         jrnl_app.show_note_details(note_id)
     output = f.getvalue()
     
-    # Check that the note with task association is displayed
-    assert f"Note {note_id}: Note for task (for task: {task_id}. Test task)" in output
+    # Check that the note with task association is displayed in the new consistent format
+    assert f"- Note for task (id:{note_id})" in output
+    assert f"(for task: {task_id}. Test task)" in output
     
-    # Check that the linked note is displayed
-    assert f"Note {other_note_id}: Other note" in output
+    # Check that the linked note is displayed in the new consistent format
+    assert f"- Other note (id:{other_note_id})" in output
 
 if __name__ == "__main__":
     test_link_notes_successfully()

@@ -718,22 +718,27 @@ def show_note_details(note_id):
         
         nid, text, creation_date, task_id, task_title = note
         
-        # Print the note text
+        # Print the note text in consistent format
         if task_id:
-            print(Fore.YELLOW + f"Note {nid}: {text} (for task: {task_id}. {task_title}) [{creation_date}]" + Style.RESET_ALL)
+            print(Fore.YELLOW + f"- {text} (id:{nid}) ({creation_date}) (for task: {task_id}. {task_title})" + Style.RESET_ALL)
         else:
-            print(Fore.YELLOW + f"Note {nid}: {text} [{creation_date}]" + Style.RESET_ALL)
+            print(Fore.YELLOW + f"- {text} (id:{nid}) ({creation_date})" + Style.RESET_ALL)
         
-        # Get linked notes
+        # Get linked notes with their task information and creation dates
         linked_notes = conn.execute("""
-            SELECT nl.note1_id, nl.note2_id, n1.text as note1_text, n2.text as note2_text
+            SELECT nl.note1_id, nl.note2_id, n1.text as note1_text, n2.text as note2_text, 
+                   n1.task_id as note1_task_id, n2.task_id as note2_task_id,
+                   n1.creation_date as note1_creation_date, n2.creation_date as note2_creation_date,
+                   t1.title as task1_title, t2.title as task2_title
             FROM note_links nl
             JOIN notes n1 ON (nl.note1_id = n1.id)
             JOIN notes n2 ON (nl.note2_id = n2.id)
+            LEFT JOIN tasks t1 ON (n1.task_id = t1.id)
+            LEFT JOIN tasks t2 ON (n2.task_id = t2.id)
             WHERE nl.note1_id = ? OR nl.note2_id = ?
         """, (note_id, note_id)).fetchall()
         
-        # Print linked notes
+        # Print linked notes in consistent format
         if linked_notes:
             print(Fore.CYAN + f"\nLinked notes:" + Style.RESET_ALL)
             for link in linked_notes:
@@ -741,11 +746,21 @@ def show_note_details(note_id):
                 if link[0] == note_id:  # note1_id is the current note
                     other_note_id = link[1]
                     other_note_text = link[3]  # note2_text
+                    other_task_id = link[5]   # note2_task_id
+                    other_creation_date = link[7] # note2_creation_date
+                    other_task_title = link[9] # task2_title
                 else:  # note2_id is the current note
                     other_note_id = link[0]
                     other_note_text = link[2]  # note1_text
+                    other_task_id = link[4]   # note1_task_id
+                    other_creation_date = link[6] # note1_creation_date
+                    other_task_title = link[8] # task1_title
                 
-                print(Fore.CYAN + f"  - Note {other_note_id}: {other_note_text}" + Style.RESET_ALL)
+                # Format the linked note consistently
+                if other_task_id and other_task_title:
+                    print(Fore.CYAN + f"  - {other_note_text} (id:{other_note_id}) ({other_creation_date}) (for task: {other_task_id}. {other_task_title})" + Style.RESET_ALL)
+                else:
+                    print(Fore.CYAN + f"  - {other_note_text} (id:{other_note_id}) ({other_creation_date})" + Style.RESET_ALL)
         else:
             print(Fore.CYAN + f"\nNo linked notes found." + Style.RESET_ALL)
 
