@@ -49,6 +49,17 @@ def init_db():
             task_id INTEGER,
             FOREIGN KEY(task_id) REFERENCES tasks(id)
         )""")
+        
+        # Create table for linking notes to each other
+        conn.execute("""
+        CREATE TABLE IF NOT EXISTS note_links (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            note1_id INTEGER NOT NULL,
+            note2_id INTEGER NOT NULL,
+            FOREIGN KEY(note1_id) REFERENCES notes(id),
+            FOREIGN KEY(note2_id) REFERENCES notes(id),
+            UNIQUE(note1_id, note2_id)
+        )""")
 
 # --- Date Helpers ---
 
@@ -463,6 +474,9 @@ def delete_note(note_ids):
     deleted_count = 0
     with sqlite3.connect(DB_FILE) as conn:
         for nid in note_ids:
+            # First delete any links associated with this note
+            conn.execute("DELETE FROM note_links WHERE note1_id=? OR note2_id=?", (nid, nid))
+            # Then delete the note itself
             cursor = conn.execute("DELETE FROM notes WHERE id=?", (nid,))
             if cursor.rowcount > 0:
                 deleted_count += 1
@@ -470,6 +484,72 @@ def delete_note(note_ids):
         print(f"Deleted {deleted_count} note(s)")
     else:
         print("No notes were deleted")
+
+def link_notes(note1_id, note2_id):
+    """Create a link between two notes"""
+    if note1_id == note2_id:
+        print(f"Error: Cannot link a note to itself (id: {note1_id})")
+        return False
+        
+    with sqlite3.connect(DB_FILE) as conn:
+        # Check if both notes exist
+        note1_exists = conn.execute("SELECT id FROM notes WHERE id=?", (note1_id,)).fetchone()
+        note2_exists = conn.execute("SELECT id FROM notes WHERE id=?", (note2_id,)).fetchone()
+        
+        if not note1_exists:
+            print(f"Error: Note with ID {note1_id} does not exist")
+            return False
+        if not note2_exists:
+            print(f"Error: Note with ID {note2_id} does not exist")
+            return False
+        
+        # Check if the link already exists (in either direction)
+        link_exists = conn.execute(
+            "SELECT id FROM note_links WHERE (note1_id=? AND note2_id=?) OR (note1_id=? AND note2_id=?)",
+            (note1_id, note2_id, note2_id, note1_id)
+        ).fetchone()
+        
+        if link_exists:
+            print(f"Notes {note1_id} and {note2_id} are already linked")
+            return True
+        
+        # Create the link (order notes in ascending order for consistency)
+        if note1_id > note2_id:
+            note1_id, note2_id = note2_id, note1_id
+            
+        conn.execute(
+            "INSERT INTO note_links (note1_id, note2_id) VALUES (?, ?)",
+            (note1_id, note2_id)
+        )
+        print(f"Linked notes {note1_id} and {note2_id}")
+        return True
+
+def unlink_notes(note1_id, note2_id):
+    """Remove a link between two notes"""
+    with sqlite3.connect(DB_FILE) as conn:
+        # Check if both notes exist
+        note1_exists = conn.execute("SELECT id FROM notes WHERE id=?", (note1_id,)).fetchone()
+        note2_exists = conn.execute("SELECT id FROM notes WHERE id=?", (note2_id,)).fetchone()
+        
+        if not note1_exists:
+            print(f"Error: Note with ID {note1_id} does not exist")
+            return False
+        if not note2_exists:
+            print(f"Error: Note with ID {note2_id} does not exist")
+            return False
+        
+        # Delete the link (handle it in either direction)
+        cursor = conn.execute(
+            "DELETE FROM note_links WHERE (note1_id=? AND note2_id=?) OR (note1_id=? AND note2_id=?)",
+            (note1_id, note2_id, note2_id, note1_id)
+        )
+        
+        if cursor.rowcount > 0:
+            print(f"Unlinked notes {note1_id} and {note2_id}")
+            return True
+        else:
+            print(f"Notes {note1_id} and {note2_id} were not linked")
+            return True
 
 def show_journal():
     with sqlite3.connect(DB_FILE) as conn:
@@ -621,6 +701,54 @@ def show_note():
             else:
                 print(Fore.YELLOW + f"\t- {text} (id: {nid}) ({creation_date})" + Style.RESET_ALL)
 
+def show_note_details(note_id):
+    """Show details of a specific note, including linked notes"""
+    with sqlite3.connect(DB_FILE) as conn:
+        # Get the specific note
+        note = conn.execute("""
+            SELECT n.id, n.text, n.creation_date, n.task_id, t.title
+            FROM notes n
+            LEFT JOIN tasks t ON n.task_id = t.id
+            WHERE n.id=?
+        """, (note_id,)).fetchone()
+        
+        if not note:
+            print(f"Error: Note with ID {note_id} does not exist")
+            return
+        
+        nid, text, creation_date, task_id, task_title = note
+        
+        # Print the note text
+        if task_id:
+            print(Fore.YELLOW + f"Note {nid}: {text} (for task: {task_id}. {task_title}) [{creation_date}]" + Style.RESET_ALL)
+        else:
+            print(Fore.YELLOW + f"Note {nid}: {text} [{creation_date}]" + Style.RESET_ALL)
+        
+        # Get linked notes
+        linked_notes = conn.execute("""
+            SELECT nl.note1_id, nl.note2_id, n1.text as note1_text, n2.text as note2_text
+            FROM note_links nl
+            JOIN notes n1 ON (nl.note1_id = n1.id)
+            JOIN notes n2 ON (nl.note2_id = n2.id)
+            WHERE nl.note1_id = ? OR nl.note2_id = ?
+        """, (note_id, note_id)).fetchall()
+        
+        # Print linked notes
+        if linked_notes:
+            print(Fore.CYAN + f"\nLinked notes:" + Style.RESET_ALL)
+            for link in linked_notes:
+                # Determine which note is the other one (not the one we're viewing)
+                if link[0] == note_id:  # note1_id is the current note
+                    other_note_id = link[1]
+                    other_note_text = link[3]  # note2_text
+                else:  # note2_id is the current note
+                    other_note_id = link[0]
+                    other_note_text = link[2]  # note1_text
+                
+                print(Fore.CYAN + f"  - Note {other_note_id}: {other_note_text}" + Style.RESET_ALL)
+        else:
+            print(Fore.CYAN + f"\nNo linked notes found." + Style.RESET_ALL)
+
 def show_completed_tasks():
     with sqlite3.connect(DB_FILE) as conn:
         tasks = conn.execute("""
@@ -741,8 +869,27 @@ def main():
         show_journal()
     elif cmd in ["task", "t"] and rest:  # Only handle as add task command if there are arguments
         add_task(" ".join(rest).split(","))
-    elif cmd in ["note", "n"] and rest:  # Only handle as add note command if there are arguments
-        if all(c.isdigit() or c == "," for c in rest[0]):
+    elif cmd in ["note", "n"] and rest:  # Handle note commands with arguments
+        # Check if first argument is a single digit/number (for note lookup or linking)
+        if len(rest) == 1 and rest[0].isdigit():
+            # View specific note with links
+            note_id = int(rest[0])
+            show_note_details(note_id)
+        elif len(rest) >= 3 and rest[0] in ["link", "unlink"] and all(arg.isdigit() for arg in rest[1:3]):
+            # Handle linking/unlinking notes
+            action = rest[0]
+            try:
+                note1_id = int(rest[1])
+                note2_id = int(rest[2])
+                
+                if action == "link":
+                    link_notes(note1_id, note2_id)
+                elif action == "unlink":
+                    unlink_notes(note1_id, note2_id)
+            except ValueError:
+                print("Error: Note IDs must be valid integers")
+        elif all(c.isdigit() or c == "," for c in rest[0]):
+            # Add note to tasks
             ids = rest[0].split(",")
             text = " ".join(rest[1:])
             if text:
@@ -750,6 +897,7 @@ def main():
             else:
                 print("Error: Please provide note text")
         else:
+            # Add standalone note
             text = " ".join(rest)
             if text:
                 add_note([], text)
@@ -907,8 +1055,11 @@ COMMANDS:
     jrnl page|p        Show journal (grouped by creation date)
     jrnl task|t <text>[,<text>...]     Add tasks
     jrnl note|n [<task id>[,<task id>...]] <text>  Add notes
-    jrnl task|t        Show all unfinished tasks
     jrnl note|n        Show all notes
+    jrnl note|n <id>          Show specific note with linked notes
+    jrnl note|n link <id1> <id2>      Link two notes together
+    jrnl note|n unlink <id1> <id2>    Unlink two notes
+    jrnl task|t        Show all unfinished tasks
     jrnl done               Show all completed tasks grouped by completion date
     jrnl status|s      Show tasks grouped by status (Todo, Doing, Waiting)
     jrnl due|d                Show tasks grouped by due date (Overdue / Due Today / This Week / This Month / Future / No Due Date)

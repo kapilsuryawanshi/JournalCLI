@@ -99,132 +99,132 @@ def test_done_without_note():
     print("\nTesting: Attempting to mark a task as done without a note (should fail)")
     
     # Clean up any existing test database
-    if os.path.exists(\"test_jrnl.db\"):
-        os.remove(\"test_jrnl.db\")
+    if os.path.exists("test_jrnl.db"):
+        os.remove("test_jrnl.db")
     
     # Create a temporary file with modified DB_FILE
-    with open(\"jrnl_app.py\", \"r\") as f:
+    with open("jrnl_app.py", "r") as f:
         content = f.read()
-    temp_content = content.replace('DB_FILE = \"jrnl.db\"', 'DB_FILE = \"test_jrnl.db\"')
-    with open(\"temp_jrnl_app.py\", \"w\") as f:
+    temp_content = content.replace('DB_FILE = "jrnl.db"', 'DB_FILE = "test_jrnl.db"')
+    with open("temp_jrnl_app.py", "w") as f:
         f.write(temp_content)
     
     try:
         # Add a task first
-        result = subprocess.run([sys.executable, \"temp_jrnl_app.py\", \"task\", \"Test task for completion\"], 
+        result = subprocess.run([sys.executable, "temp_jrnl_app.py", "task", "Test task for completion"], 
                               capture_output=True, text=True)
-        print(f\"Add task result: {result.stdout.strip()}\")
+        print(f"Add task result: {result.stdout.strip()}")
         
         # Try to mark the task as done without a note (should fail)
-        result = subprocess.run([sys.executable, \"temp_jrnl_app.py\", \"done\", \"1\"], 
+        result = subprocess.run([sys.executable, "temp_jrnl_app.py", "done", "1"], 
                               capture_output=True, text=True)
-        print(f\"Mark done without note result: {result.stdout.strip()}\")
+        print(f"Mark done without note result: {result.stdout.strip()}")
         if result.stderr:
-            print(f\"Mark done without note error: {result.stderr.strip()}\")
+            print(f"Mark done without note error: {result.stderr.strip()}")
         
         # Verify the task was NOT marked as done
-        with sqlite3.connect(\"test_jrnl.db\") as conn:
-            tasks = conn.execute(\"SELECT * FROM tasks WHERE id=1\").fetchall()
+        with sqlite3.connect("test_jrnl.db") as conn:
+            tasks = conn.execute("SELECT * FROM tasks WHERE id=1").fetchall()
             if tasks:
                 task = tasks[0]
-                print(f\"Task status after failed completion attempt: {task[2]} (status), {task[5]} (completion date)\")
+                print(f"Task status after failed completion attempt: {task[2]} (status), {task[5]} (completion date)")
                 
                 # Check if task status is still 'todo' and completion date is NOT set
                 if task[2] == 'todo' and task[5] is None:
-                    print(\"✓ Task correctly remained in 'todo' status\")
+                    print("✓ Task correctly remained in 'todo' status")
                 else:
-                    print(\"✗ Task may have been incorrectly marked as done\")
+                    print("✗ Task may have been incorrectly marked as done")
         
         # Verify that error message was shown
-        if \"Please provide a note\" in result.stdout or \"Please provide a note\" in result.stderr:
-            print(\"✓ Correct error message shown when no note is provided\")
+        if "Please provide a note" in result.stdout or "Please provide a note" in result.stderr:
+            print("✓ Correct error message shown when no note is provided")
         else:
-            print(\"✗ No appropriate error message shown\")
+            print("✗ No appropriate error message shown")
             
         return True
     except Exception as e:
-        print(f\"Error in test: {e}\")
+        print(f"Error in test: {e}")
         return False
     finally:
         # Cleanup
-        if os.path.exists(\"test_jrnl.db\"):
-            os.remove(\"test_jrnl.db\")
-        if os.path.exists(\"temp_jrnl_app.py\"):
-            os.remove(\"temp_jrnl_app.py\")
+        if os.path.exists("test_jrnl.db"):
+            os.remove("test_jrnl.db")
+        if os.path.exists("temp_jrnl_app.py"):
+            os.remove("temp_jrnl_app.py")
 
 def test_x_shortcut_with_note():
-    \"\"\"Test marking a task as done using 'x' shortcut with a note\"\"\"
-    print(\"\\nTesting: Marking a task as done using 'x' shortcut with a note\")
+    """Test marking a task as done using 'x' shortcut with a note"""
+    print("\nTesting: Marking a task as done using 'x' shortcut with a note")
     
     # Clean up any existing test database
-    if os.path.exists(\"test_jrnl.db\"):
-        os.remove(\"test_jrnl.db\")
+    if os.path.exists("test_jrnl.db"):
+        os.remove("test_jrnl.db")
     
     # Create a temporary file with modified DB_FILE
-    with open(\"jrnl_app.py\", \"r\") as f:
+    with open("jrnl_app.py", "r") as f:
         content = f.read()
-    temp_content = content.replace('DB_FILE = \"jrnl.db\"', 'DB_FILE = \"test_jrnl.db\"')
-    with open(\"temp_jrnl_app.py\", \"w\") as f:
+    temp_content = content.replace('DB_FILE = "jrnl.db"', 'DB_FILE = "test_jrnl.db"')
+    with open("temp_jrnl_app.py", "w") as f:
         f.write(temp_content)
     
     try:
         # Add a task first
-        result = subprocess.run([sys.executable, \"temp_jrnl_app.py\", \"task\", \"Test task for x shortcut\"], 
+        result = subprocess.run([sys.executable, "temp_jrnl_app.py", "task", "Test task for x shortcut"], 
                               capture_output=True, text=True)
-        print(f\"Add task result: {result.stdout.strip()}\")
+        print(f"Add task result: {result.stdout.strip()}")
         
         # Mark the task as done using 'x' shortcut with a note
-        result = subprocess.run([sys.executable, \"temp_jrnl_app.py\", \"x\", \"1\", \"Completed with x shortcut\"], 
+        result = subprocess.run([sys.executable, "temp_jrnl_app.py", "x", "1", "Completed with x shortcut"], 
                               capture_output=True, text=True)
-        print(f\"Mark done with x shortcut result: {result.stdout.strip()}\")
+        print(f"Mark done with x shortcut result: {result.stdout.strip()}")
         if result.stderr:
-            print(f\"Mark done with x shortcut error: {result.stderr.strip()}\")
+            print(f"Mark done with x shortcut error: {result.stderr.strip()}")
         
         # Verify the task was marked as done
-        with sqlite3.connect(\"test_jrnl.db\") as conn:
-            tasks = conn.execute(\"SELECT * FROM tasks WHERE id=1\").fetchall()
+        with sqlite3.connect("test_jrnl.db") as conn:
+            tasks = conn.execute("SELECT * FROM tasks WHERE id=1").fetchall()
             if tasks:
                 task = tasks[0]
-                print(f\"Task status after completion with x: {task[2]} (status), {task[5]} (completion date)\")
+                print(f"Task status after completion with x: {task[2]} (status), {task[5]} (completion date)")
                 
                 # Verify the note was added to the task
-                notes = conn.execute(\"SELECT * FROM notes WHERE task_id=1\").fetchall()
-                print(f\"Notes for task 1: {len(notes)}\")
+                notes = conn.execute("SELECT * FROM notes WHERE task_id=1").fetchall()
+                print(f"Notes for task 1: {len(notes)}")
                 
                 # Check if task status is 'done' and completion date is set
                 if task[2] == 'done' and task[5] is not None:
-                    print(\"✓ Task correctly marked as done with completion date using 'x' shortcut\")
+                    print("✓ Task correctly marked as done with completion date using 'x' shortcut")
                 else:
-                    print(\"✗ Task not correctly marked as done using 'x' shortcut\")
+                    print("✗ Task not correctly marked as done using 'x' shortcut")
                 
                 # Check if note was added
-                if len(notes) == 1 and notes[0][1] == \"Completed with x shortcut\":
-                    print(\"✓ Note correctly added to completed task using 'x' shortcut\")
+                if len(notes) == 1 and notes[0][1] == "Completed with x shortcut":
+                    print("✓ Note correctly added to completed task using 'x' shortcut")
                 else:
-                    print(\"✗ Note not correctly added to completed task using 'x' shortcut\")
+                    print("✗ Note not correctly added to completed task using 'x' shortcut")
         
         return True
     except Exception as e:
-        print(f\"Error in test: {e}\")
+        print(f"Error in test: {e}")
         return False
     finally:
         # Cleanup
-        if os.path.exists(\"test_jrnl.db\"):
-            os.remove(\"test_jrnl.db\")
-        if os.path.exists(\"temp_jrnl_app.py\"):
-            os.remove(\"temp_jrnl_app.py\")
+        if os.path.exists("test_jrnl.db"):
+            os.remove("test_jrnl.db")
+        if os.path.exists("temp_jrnl_app.py"):
+            os.remove("temp_jrnl_app.py")
 
-if __name__ == \"__main__\":
-    print(\"Testing the enhanced 'done' command functionality\")
-    print(\"=\"*50)
+if __name__ == "__main__":
+    print("Testing the enhanced 'done' command functionality")
+    print("="*50)
     
     success = True
     success &= test_done_with_note()
     success &= test_done_without_note()
     success &= test_x_shortcut_with_note()
     
-    print(\"\\n\" + \"=\"*50)
+    print("\n" + "="*50)
     if success:
-        print(\"All tests completed! Check results above.\")
+        print("All tests completed! Check results above.")
     else:
-        print(\"Some tests failed!\")
+        print("Some tests failed!")
