@@ -882,8 +882,61 @@ def main():
         show_due()
     elif cmd in ["page", "p"]:
         show_journal()
-    elif cmd in ["task", "t"] and rest:  # Only handle as add task command if there are arguments
-        add_task(" ".join(rest).split(","))
+    elif cmd in ["task", "t"] and rest:  # Handle task commands
+        # Check if it's a task edit command: jrnl task <id> edit [text:<text>] [due:<text>] [note:<text>] [recur:<Nd|Nw|Nm|Ny>]
+        if len(rest) >= 2 and rest[0].isdigit() and rest[1] == "edit":
+            task_id = int(rest[0])
+            
+            # Parse additional arguments for editing (format: key:value)
+            new_title = None
+            new_due = None
+            note_text = None
+            recur_pattern = None
+            
+            # Process each argument after "edit"
+            for i in range(2, len(rest)):
+                arg = rest[i]
+                
+                if arg.startswith("text:"):
+                    # Extract text after "text:"
+                    new_title = arg[5:]  # Remove "text:" prefix
+                
+                elif arg.startswith("due:"):
+                    # Parse due date after "due:"
+                    due_text = arg[4:]  # Remove "due:" prefix
+                    new_due = parse_due(due_text)
+                
+                elif arg.startswith("note:"):
+                    # Extract note text after "note:"
+                    note_text = arg[5:]  # Remove "note:" prefix
+                
+                elif arg.startswith("recur:"):
+                    # Extract recur pattern after "recur:"
+                    recur_pattern = arg[6:]  # Remove "recur:" prefix
+            
+            # Perform operations in order
+            if new_title:
+                edit_task(task_id, new_title)
+            
+            if new_due:
+                with sqlite3.connect(DB_FILE) as conn:
+                    conn.execute(
+                        "UPDATE tasks SET due_date=? WHERE id=?",
+                        (new_due.strftime("%Y-%m-%d"), task_id)
+                    )
+                    print(f"Updated due date for task {task_id} to {new_due.strftime('%Y-%m-%d')}")
+            
+            if note_text:
+                # Add note to the task
+                add_note([task_id], note_text)
+                
+            if recur_pattern:
+                # Validate and set recur pattern
+                if set_task_recur([task_id], recur_pattern):
+                    print(f"Set recur pattern '{recur_pattern}' for task {task_id}")
+        else:
+            # Otherwise, treat as adding tasks (original functionality)
+            add_task(" ".join(rest).split(","))
     elif cmd in ["note", "n"] and rest:  # Handle note commands with arguments
         # Check if first argument is a single digit/number (for note lookup)
         if len(rest) == 1 and rest[0].isdigit():
@@ -935,13 +988,8 @@ def main():
             # The old link/unlink commands have been replaced with the consolidated command
             print("Error: The 'link' and 'unlink' commands have been removed. Use 'jrnl note <id> edit link:<id>[,<id>,...]' and 'jrnl note <id> edit unlink:<id>[,<id>,...]' instead.")
         elif all(c.isdigit() or c == "," for c in rest[0]):
-            # Add note to tasks
-            ids = rest[0].split(",")
-            text = " ".join(rest[1:])
-            if text:
-                add_note([int(i) for i in ids], text)
-            else:
-                print("Error: Please provide note text")
+            # Add note to tasks - this functionality has been replaced with the consolidated command
+            print("Error: Adding notes to tasks using 'jrnl note <task_id> <text>' has been removed. Use 'jrnl task <id> edit -note <text>' instead.")
         else:
             # Add standalone note
             text = " ".join(rest)
@@ -956,12 +1004,11 @@ def main():
             
             # Check if the identifier starts with 't' (task)
             if item_identifier.startswith("t") and item_identifier[1:].isdigit():
-                task_id = int(item_identifier[1:])
-                edit_task(task_id, new_text)
+                print("Error: The 'edit' command for tasks has been removed. Use 'jrnl task <id> edit -text <new text>' instead.")
             else:
-                print("Error: Invalid format. Use 't<ID>' for tasks. For notes, use 'jrnl note <id> edit -text <new text>'")
+                print("Error: The 'edit' command has been removed for tasks. For task editing, use 'jrnl task <id> edit -text <new text>'. For note editing, use 'jrnl note <id> edit text:<new text>'.")
         else:
-            print("Error: Please provide an item identifier and new text")
+            print("Error: Please use the consolidated commands: 'jrnl task <id> edit' or 'jrnl note <id> edit'")
     elif cmd == "rm":
         if rest:
             task_ids = []
@@ -1025,43 +1072,13 @@ def main():
         show_tasks_by_status()
     elif cmd in ["due", "d"]:
         if rest and all(c.isdigit() or c == "," for c in rest[0]):
-            # Parse task IDs (supporting multiple IDs separated by commas)
-            task_ids = []
-            for arg in rest[0].split(","):
-                if arg.isdigit():
-                    task_ids.append(int(arg))
-            
-            # Parse the date
-            if len(rest) > 1:
-                due = parse_due(rest[1])
-                updated_count = 0
-                with sqlite3.connect(DB_FILE) as conn:
-                    for tid in task_ids:
-                        conn.execute(
-                            "UPDATE tasks SET due_date=? WHERE id=?",
-                            (due.strftime("%Y-%m-%d"), tid)
-                        )
-                        updated_count += 1
-                if updated_count > 0:
-                    print(f"Updated due date for {updated_count} task(s) to {due.strftime('%Y-%m-%d')}")
-            else:
-                print("Error: Please provide a date.")
+            # The 'due' command for changing due dates has been replaced with the consolidated command
+            print("Error: The 'due' command for changing due dates has been removed. Use 'jrnl task <id> edit -due <date>' instead.")
         else:
             show_due()
     elif cmd == "recur":
-        if rest and all(c.isdigit() or c == "," for c in rest[0]) and len(rest) > 1:
-            # Parse task IDs (supporting multiple IDs separated by commas)
-            task_ids = []
-            for arg in rest[0].split(","):
-                if arg.isdigit():
-                    task_ids.append(int(arg))
-            
-            # Parse the recur pattern
-            recur_pattern = rest[1]
-            if set_task_recur(task_ids, recur_pattern):
-                print(f"Set recur pattern '{recur_pattern}' for {len(task_ids)} task(s)")
-        else:
-            print("Error: Please provide task IDs and a recur pattern (e.g., 4w, 2d, 1m, 1y)")
+        # The 'recur' command has been replaced with the consolidated command
+        print("Error: The 'recur' command has been removed. Use 'jrnl task <id> edit -recur <Nd|Nw|Nm|Ny>' instead.")
     elif cmd in ["waiting", "start", "restart"]:  # Removed "done" from here
         if rest:
             ids = []
@@ -1097,22 +1114,20 @@ COMMANDS:
     jrnl                    Show tasks grouped by due date (default view) (Overdue / Due Today / This Week / This Month / Future / No Due Date)
     jrnl page|p        Show journal (grouped by creation date)
     jrnl task|t <text>[,<text>...]     Add tasks
-    jrnl note|n [<task id>[,<task id>...]] <text>  Add notes
+    jrnl task|t <id> edit [-text <text>] [-due <text>] [-note <text>] [-recur <Nd|Nw|Nm|Ny>]  Edit task with optional parameters
     jrnl note|n        Show all notes
+    jrnl note|n <text>          Add standalone note (to add note to task, use 'jrnl task <id> edit -note <text>')
     jrnl note|n <id>          Show specific note with linked notes
     jrnl note|n <id> edit [text:<text>] [link:<id>[,<id>,...]] [unlink:<id>[,<id>,...]]  Edit note with optional text, linking, unlinking
     jrnl task|t        Show all unfinished tasks
     jrnl done               Show all completed tasks grouped by completion date
     jrnl status|s      Show tasks grouped by status (Todo, Doing, Waiting)
     jrnl due|d                Show tasks grouped by due date (Overdue / Due Today / This Week / This Month / Future / No Due Date)
-    jrnl due <id>[,<id>...] <date>  Change due date for task(s)
-    jrnl recur <id>[,<id>...] <Nd|Nw|Nm|Ny>  Make task(s) recurring
     jrnl restart <id>[,<id>...]   Mark tasks as not done
     jrnl start <id>[,<id>...]     Mark tasks as in progress
     jrnl waiting <id>[,<id>...]   Mark tasks as waiting
     jrnl done|x <id>[,<id>...] <note text>      Mark tasks as done with a completion note
     jrnl find|f <text>        Search for tasks and notes containing text
-    jrnl edit t<id> <new title>  Edit task title
     jrnl rm t<id>[,n<id>...]      Delete tasks (t) or notes (n)
     jrnl help|h        Show this help message
 """)
