@@ -870,49 +870,50 @@ def show_tasks_by_status():
 def main():
     init_db()
 
-    parser = argparse.ArgumentParser(prog="jrnl", add_help=False)
-    parser.add_argument("command", nargs="?", default=None)
-    parser.add_argument("args", nargs="*")
-    args = parser.parse_args()
-
-    cmd = args.command
-    rest = args.args
+    # Parse command line arguments manually to avoid argparse interpreting flags as its own arguments
+    import sys
+    if len(sys.argv) == 1:
+        cmd = None
+        rest = []
+    elif len(sys.argv) == 2:
+        cmd = sys.argv[1]
+        rest = []
+    else:
+        cmd = sys.argv[1]
+        rest = sys.argv[2:]
 
     if cmd is None:
         show_due()
     elif cmd in ["page", "p"]:
         show_journal()
     elif cmd in ["task", "t"] and rest:  # Handle task commands
-        # Check if it's a task edit command: jrnl task <id> edit [text:<text>] [due:<text>] [note:<text>] [recur:<Nd|Nw|Nm|Ny>]
+        # Check if it's a task edit command: jrnl task <id> edit [-text <text>] [-due <text>] [-note <text>] [-recur <Nd|Nw|Nm|Ny>]
         if len(rest) >= 2 and rest[0].isdigit() and rest[1] == "edit":
             task_id = int(rest[0])
             
-            # Parse additional arguments for editing (format: key:value)
+            # Parse additional arguments for editing (format: -flag value)
             new_title = None
             new_due = None
             note_text = None
             recur_pattern = None
             
-            # Process each argument after "edit"
-            for i in range(2, len(rest)):
-                arg = rest[i]
-                
-                if arg.startswith("text:"):
-                    # Extract text after "text:"
-                    new_title = arg[5:]  # Remove "text:" prefix
-                
-                elif arg.startswith("due:"):
-                    # Parse due date after "due:"
-                    due_text = arg[4:]  # Remove "due:" prefix
-                    new_due = parse_due(due_text)
-                
-                elif arg.startswith("note:"):
-                    # Extract note text after "note:"
-                    note_text = arg[5:]  # Remove "note:" prefix
-                
-                elif arg.startswith("recur:"):
-                    # Extract recur pattern after "recur:"
-                    recur_pattern = arg[6:]  # Remove "recur:" prefix
+            i = 2
+            while i < len(rest):
+                if rest[i] == "-text" and i + 1 < len(rest):
+                    new_title = rest[i + 1]
+                    i += 2
+                elif rest[i] == "-due" and i + 1 < len(rest):
+                    new_due = parse_due(rest[i + 1])
+                    i += 2
+                elif rest[i] == "-note" and i + 1 < len(rest):
+                    note_text = rest[i + 1]
+                    i += 2
+                elif rest[i] == "-recur" and i + 1 < len(rest):
+                    recur_pattern = rest[i + 1]
+                    i += 2
+                else:
+                    # Skip unknown option
+                    i += 1
             
             # Perform operations in order
             if new_title:
@@ -944,33 +945,34 @@ def main():
             note_id = int(rest[0])
             show_note_details(note_id)
         elif len(rest) >= 2 and rest[0].isdigit():
-            # Handle consolidated note edit command: jrnl note <id> edit [text:<text>] [link:<id>[,<id>,...]] [unlink:<id>[,<id>,...]]
+            # Handle consolidated note edit command: jrnl note <id> edit [-text <text>] [-link <id>[,<id>,...]] [-unlink <id>[,<id>,...]]
             note_id = int(rest[0])
             if rest[1] == "edit":
-                # Parse additional arguments for editing (format: key:value)
+                # Parse additional arguments for editing (format: -flag value)
                 new_text = None
                 link_ids = []
                 unlink_ids = []
                 
-                # Process each argument after "edit"
-                for i in range(2, len(rest)):
-                    arg = rest[i]
-                    
-                    if arg.startswith("text:"):
-                        # Extract text after "text:"
-                        new_text = arg[5:]  # Remove "text:" prefix
-                    
-                    elif arg.startswith("link:"):
+                i = 2
+                while i < len(rest):
+                    if rest[i] == "-text" and i + 1 < len(rest):
+                        new_text = rest[i + 1]
+                        i += 2
+                    elif rest[i] == "-link" and i + 1 < len(rest):
                         # Parse comma-separated list of IDs to link
-                        ids_str = arg[5:]  # Remove "link:" prefix
+                        ids_str = rest[i + 1]
                         ids = ids_str.split(",")
                         link_ids = [int(id_str) for id_str in ids if id_str.isdigit()]
-                    
-                    elif arg.startswith("unlink:"):
+                        i += 2
+                    elif rest[i] == "-unlink" and i + 1 < len(rest):
                         # Parse comma-separated list of IDs to unlink
-                        ids_str = arg[7:]  # Remove "unlink:" prefix
+                        ids_str = rest[i + 1]
                         ids = ids_str.split(",")
                         unlink_ids = [int(id_str) for id_str in ids if id_str.isdigit()]
+                        i += 2
+                    else:
+                        # Skip unknown option
+                        i += 1
                 
                 # Perform operations in order: edit text, then unlink, then link
                 if new_text:
@@ -1118,7 +1120,7 @@ COMMANDS:
     jrnl note|n        Show all notes
     jrnl note|n <text>          Add standalone note (to add note to task, use 'jrnl task <id> edit -note <text>')
     jrnl note|n <id>          Show specific note with linked notes
-    jrnl note|n <id> edit [text:<text>] [link:<id>[,<id>,...]] [unlink:<id>[,<id>,...]]  Edit note with optional text, linking, unlinking
+    jrnl note|n <id> edit [-text <text>] [-link <id>[,<id>,...]] [-unlink <id>[,<id>,...]]  Edit note with optional text, linking, unlinking
     jrnl task|t        Show all unfinished tasks
     jrnl done               Show all completed tasks grouped by completion date
     jrnl status|s      Show tasks grouped by status (Todo, Doing, Waiting)
