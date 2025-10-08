@@ -1279,7 +1279,7 @@ USAGE:
     jrnl [command] [arguments...]
 
 COMMANDS:
-    jrnl                    Show tasks grouped by due date (default view) (Overdue / Due Today / This Week / This Month / Future / No Due Date)
+    jrnl                    Show tasks grouped by due date (default view) (Overdue / Due Today / Due Tomorrow / This Week / This Month / Future / No Due Date)
     jrnl new note <text> [-link <id>[,<id>,...]]      Add a new note with optional links
     jrnl new task <text> [-due @<YYYY-MM-DD|today|tomorrow|eow|eom|eoy>] [-recur <Nd|Nw|Nm|Ny>]     Add a new task with optional due date and recurrence
     jrnl edit note <id> [-text <text>] [-link <id>[,<id>,...]] [-unlink <id>[,<id>,...]]  Edit note with optional text, linking, unlinking
