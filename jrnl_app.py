@@ -135,7 +135,12 @@ def format_note(note, indent="\t"):
     return Fore.YELLOW + indent + f"- {text} (id:{nid}) ({creation_date})" + Style.RESET_ALL
 
 def search_tasks_and_notes(search_text):
-    """Search for tasks and notes containing the search text"""
+    """Search for tasks and notes containing the search text (supports wildcards: * and ?)"""
+    # Convert user-friendly wildcards to SQL LIKE patterns
+    # * -> % (matches any sequence of characters)
+    # ? -> _ (matches any single character)
+    sql_search_text = search_text.replace("*", "%").replace("?", "_")
+    
     with sqlite3.connect(DB_FILE) as conn:
         # Search in tasks (title column)
         tasks = conn.execute(
@@ -145,7 +150,7 @@ def search_tasks_and_notes(search_text):
             WHERE title LIKE ? 
             ORDER BY creation_date ASC,id ASC
             """,
-            (f"%{search_text}%",)
+            (f"%{sql_search_text}%",)
         ).fetchall()
 
         # Search in notes (text column)
@@ -156,7 +161,7 @@ def search_tasks_and_notes(search_text):
             WHERE text LIKE ? 
             ORDER BY creation_date ASC,id ASC
             """,
-            (f"%{search_text}%",)
+            (f"%{sql_search_text}%",)
         ).fetchall()
 
     # Group by creation_date
@@ -605,6 +610,7 @@ def show_due():
         task_notes[note[3]].append(note)  # note[3] is task_id
 
     today = datetime.now().date()
+    tomorrow = today + timedelta(days=1)
     # Calculate the end of this week (Sunday) and end of this month
     end_of_week = today + timedelta(days=(6 - today.weekday()))
     # For end of month, we get the last day of the current month
@@ -613,7 +619,7 @@ def show_due():
     else:
         end_of_month = today.replace(month=today.month + 1, day=1) - timedelta(days=1)
     
-    buckets = {"Overdue": [], "Due Today": [], "This Week": [], "This Month": [], "Future": [], "No Due Date": []}
+    buckets = {"Overdue": [], "Due Today": [], "Due Tomorrow": [], "This Week": [], "This Month": [], "Future": [], "No Due Date": []}
 
     for t in tasks:
         # t[4] is due_date
@@ -623,6 +629,8 @@ def show_due():
                 buckets["Overdue"].append(t)
             elif due == today:
                 buckets["Due Today"].append(t)
+            elif due == tomorrow:
+                buckets["Due Tomorrow"].append(t)
             elif due <= end_of_week:
                 buckets["This Week"].append(t)
             elif due <= end_of_month:
@@ -632,8 +640,8 @@ def show_due():
         else:
             buckets["No Due Date"].append(t)
 
-    # Updated order: Overdue, Due Today, This Week, This Month, Future, No Due Date
-    for label in ["Overdue", "Due Today", "This Week", "This Month", "Future", "No Due Date"]:
+    # Updated order: Overdue, Due Today, Due Tomorrow, This Week, This Month, Future, No Due Date
+    for label in ["Overdue", "Due Today", "Due Tomorrow", "This Week", "This Month", "Future", "No Due Date"]:
         if buckets[label]:
             print(f"\n{label}")
             for t in buckets[label]:
@@ -884,121 +892,292 @@ def main():
 
     if cmd is None:
         show_due()
-    elif cmd in ["page", "p"]:
-        show_journal()
-    elif cmd in ["task", "t"] and rest:  # Handle task commands
-        # Check if it's a task edit command: jrnl task <id> edit [-text <text>] [-due <text>] [-note <text>] [-recur <Nd|Nw|Nm|Ny>]
-        if len(rest) >= 2 and rest[0].isdigit() and rest[1] == "edit":
-            task_id = int(rest[0])
+    elif cmd == "new" and len(rest) >= 2:  # Handle new consolidated commands
+        sub_cmd = rest[0]  # "note" or "task"
+        cmd_args = rest[1:]
+        
+        if sub_cmd == "note":  # Handle "jrnl new note <text> [-link <id>[,<id>,...]]"
+            # Find the note text (everything before the first option flag)
+            note_text = []
+            link_ids = []
+            i = 0
+            while i < len(cmd_args):
+                if cmd_args[i].startswith("-"):
+                    if cmd_args[i] == "-link" and i + 1 < len(cmd_args):
+                        # Parse comma-separated list of IDs to link
+                        ids_str = cmd_args[i + 1]
+                        ids = ids_str.split(",")
+                        link_ids = [int(id_str) for id_str in ids if id_str.isdigit()]
+                        i += 2
+                    else:
+                        # Unknown option
+                        i += 1
+                else:
+                    note_text.append(cmd_args[i])
+                    i += 1
             
-            # Parse additional arguments for editing (format: -flag value)
-            new_title = None
-            new_due = None
-            note_text = None
+            if not note_text:
+                print("Error: Please provide note text")
+                return
+            
+            text = " ".join(note_text)
+            if text:
+                # Add the note first
+                add_note([], text)
+                
+                # Then create links if specified
+                if link_ids:
+                    # Get the ID of the newly added note
+                    with sqlite3.connect(DB_FILE) as conn:
+                        new_note_id = conn.execute("SELECT id FROM notes WHERE text=? ORDER BY id DESC LIMIT 1", (text,)).fetchone()
+                    
+                    if new_note_id:
+                        note_id = new_note_id[0]
+                        for link_id in link_ids:
+                            link_notes(note_id, link_id)
+            else:
+                print("Error: Please provide note text")
+        
+        elif sub_cmd == "task":  # Handle "jrnl new task <text> [-due @<YYYY-MM-DD|today|tomorrow|eow|eom|eoy>] [-recur <Nd|Nw|Nm|Ny>]"
+            # Find the task text (everything before the first option flag)
+            task_text = []
+            due_date = None
             recur_pattern = None
+            i = 0
+            while i < len(cmd_args):
+                if cmd_args[i].startswith("-"):
+                    if cmd_args[i] == "-due" and i + 1 < len(cmd_args):
+                        due_kw = cmd_args[i + 1].lstrip("@")  # Remove @ prefix if present
+                        due_date = parse_due(due_kw)
+                        i += 2
+                    elif cmd_args[i] == "-recur" and i + 1 < len(cmd_args):
+                        recur_pattern = cmd_args[i + 1]
+                        # Validate the recurrence pattern
+                        if not set_task_recur([0], recur_pattern):  # Use 0 as placeholder, we'll update later
+                            print("Error: Invalid recurrence pattern. Use format: <number><unit> (e.g., 4w, 2d, 1m, 1y)")
+                            return
+                        i += 2
+                    else:
+                        # Unknown option
+                        i += 1
+                else:
+                    task_text.append(cmd_args[i])
+                    i += 1
             
-            i = 2
-            while i < len(rest):
-                if rest[i] == "-text" and i + 1 < len(rest):
-                    new_title = rest[i + 1]
+            if not task_text:
+                print("Error: Please provide task text")
+                return
+            
+            text = " ".join(task_text)
+            if text:
+                # Add the task with due date if specified
+                if due_date:
+                    # Create a temporary task with due date
+                    today = datetime.now().date().strftime("%Y-%m-%d")
+                    with sqlite3.connect(DB_FILE) as conn:
+                        task_id = conn.execute(
+                            "INSERT INTO tasks (title,status,creation_date,due_date,recur) VALUES (?,?,?,?,?)",
+                            (text, "todo", today, due_date.strftime("%Y-%m-%d"), recur_pattern)
+                        ).lastrowid
+                        print(f"Added 1 task(s)")
+                else:
+                    # Add task without due date (default to today)
+                    if recur_pattern:  # Need to call add_task with proper due date handling
+                        # Use today as default due date when recurrence is specified but due date isn't
+                        today = datetime.now().date()
+                        formatted_today = today.strftime("%Y-%m-%d")
+                        with sqlite3.connect(DB_FILE) as conn:
+                            task_id = conn.execute(
+                                "INSERT INTO tasks (title,status,creation_date,due_date,recur) VALUES (?,?,?,?,?)",
+                                (text, "todo", formatted_today, formatted_today, recur_pattern)
+                            ).lastrowid
+                        print(f"Added 1 task(s)")
+                    else:
+                        # Call original add_task function for simple tasks
+                        add_task([text])
+            else:
+                print("Error: Please provide task text")
+    
+    elif cmd in ["page", "p"]:
+        # The old 'jrnl page|p' command has been removed
+        print("Error: The 'jrnl page|p' command has been removed. Use 'jrnl list page' instead.")
+    elif cmd in ["task", "t"] and rest:  # Handle task commands
+        # The old task command (jrnl task <text>) has been removed
+        print("Error: The 'jrnl task <text>' command has been removed. Use 'jrnl new task <text> [-due @<date>] [-recur <Nd|Nw|Nm|Ny>]' instead.")
+    elif cmd in ["note", "n"] and rest:  # Handle note commands with arguments
+        # Check if first argument is a single digit/number (for note lookup)
+        if len(rest) == 1 and rest[0].isdigit():
+            # The old note command (jrnl note <id>) has been removed
+            print("Error: The 'jrnl note <id>' command has been removed. Use 'jrnl show note <id>' instead.")
+        else:
+            # The old note command (jrnl note <text>) and edit command (jrnl note <id> edit) have been removed
+            print("Error: The 'jrnl note <text>' and 'jrnl note <id> edit' commands have been removed. Use 'jrnl new note <text> [-link <id>[,<id>,...]]' for new notes or 'jrnl edit note <id> [-text <text>] [-link <id>[,<id>,...]] [-unlink <id>[,<id>,...]]' for editing.")
+    elif cmd == "view" and len(rest) >= 2:
+        # New consolidated command: jrnl view task <due|status|done>
+        if rest[0] == "task" and rest[1] == "due":
+            show_due()
+        elif rest[0] == "task" and rest[1] == "status":
+            show_tasks_by_status()
+        elif rest[0] == "task" and rest[1] == "done":
+            show_completed_tasks()
+        else:
+            print("Error: Invalid syntax. Use 'jrnl view task <due|status|done>'")
+    elif cmd in ["start", "restart", "waiting"] and len(rest) >= 2 and rest[0] == "task":
+        # New consolidated command: jrnl <start|restart|waiting> task <id>[,<id>,...]
+        ids_str = rest[1]
+        ids = [int(id_str) for id_str in ids_str.split(",") if id_str.isdigit()]
+        
+        if cmd == "start":
+            update_task_status(ids, "doing")
+        elif cmd == "restart":
+            update_task_status(ids, "todo")
+        elif cmd == "waiting":
+            update_task_status(ids, "waiting")
+    elif cmd == "done" and len(rest) >= 2 and rest[0] == "task":
+        # New consolidated command: jrnl done task <id>[,<id>,...] <note text>
+        ids_str = rest[1]
+        ids = [int(id_str) for id_str in ids_str.split(",") if id_str.isdigit()]
+        
+        # Everything after the task IDs is considered note text
+        note_text = " ".join(rest[2:])
+        if not ids:
+            print("Error: Please provide valid task IDs and note text")
+            return
+        if not note_text:
+            print("Error: Please provide a note for completing the task(s)")
+            return
+        
+        update_task_status(ids, "done", note_text)
+    elif cmd == "show" and len(rest) >= 2 and rest[0] in ["note", "task"]:
+        # New consolidated command: jrnl show <note|task> <id>
+        item_type = rest[0]
+        item_id = int(rest[1]) if rest[1].isdigit() else None
+        
+        if item_type == "note" and item_id is not None:
+            show_note_details(item_id)
+        elif item_type == "task" and item_id is not None:
+            # For showing a specific task, we'll need to implement this functionality
+            # First, find tasks by their ID
+            with sqlite3.connect(DB_FILE) as conn:
+                task = conn.execute(
+                    "SELECT id,title,status,creation_date,due_date,completion_date,recur FROM tasks WHERE id=?", 
+                    (item_id,)
+                ).fetchone()
+                
+            if task:
+                print(format_task(task))
+                # Also show any notes associated with this task
+                with sqlite3.connect(DB_FILE) as conn:
+                    notes = conn.execute(
+                        "SELECT id,text,creation_date,task_id FROM notes WHERE task_id=?", 
+                        (item_id,)
+                    ).fetchall()
+                    
+                for note in notes:
+                    print(format_note(note, indent="    "))
+            else:
+                print(f"Error: Task with ID {item_id} not found")
+        else:
+            print("Error: Invalid syntax. Use 'jrnl show <note|task> <id>'")
+    elif cmd in ["task", "t"]:
+        # The old 'jrnl task' command has been removed
+        print("Error: The 'jrnl task' command has been removed. Use 'jrnl list task status' instead.")
+    elif cmd in ["note", "n"]:
+        # The old 'jrnl note' command has been removed
+        print("Error: The 'jrnl note' command has been removed. Use 'jrnl list note' instead.")
+    elif cmd == "edit" and len(rest) >= 2:
+        # New consolidated edit syntax: jrnl edit <note|task> <id> [options]
+        item_type = rest[0].lower()
+        item_id = int(rest[1]) if rest[1].isdigit() else None
+        
+        if item_type not in ["note", "task"] or item_id is None:
+            print("Error: Invalid syntax. Use 'jrnl edit note <id> [options]' or 'jrnl edit task <id> [options]'")
+            return
+        
+        # Parse options
+        options = rest[2:]
+        if item_type == "note":
+            # Handle note editing options
+            new_text = None
+            link_ids = []
+            unlink_ids = []
+            
+            i = 0
+            while i < len(options):
+                if options[i] == "-text" and i + 1 < len(options):
+                    new_text = options[i + 1]
                     i += 2
-                elif rest[i] == "-due" and i + 1 < len(rest):
-                    new_due = parse_due(rest[i + 1])
+                elif options[i] == "-link" and i + 1 < len(options):
+                    # Parse comma-separated list of IDs to link
+                    ids_str = options[i + 1]
+                    ids = ids_str.split(",")
+                    link_ids = [int(id_str) for id_str in ids if id_str.isdigit()]
                     i += 2
-                elif rest[i] == "-note" and i + 1 < len(rest):
-                    note_text = rest[i + 1]
-                    i += 2
-                elif rest[i] == "-recur" and i + 1 < len(rest):
-                    recur_pattern = rest[i + 1]
+                elif options[i] == "-unlink" and i + 1 < len(options):
+                    # Parse comma-separated list of IDs to unlink
+                    ids_str = options[i + 1]
+                    ids = ids_str.split(",")
+                    unlink_ids = [int(id_str) for id_str in ids if id_str.isdigit()]
                     i += 2
                 else:
                     # Skip unknown option
                     i += 1
             
-            # Perform operations in order
+            # Perform operations in order: edit text, then unlink, then link
+            if new_text:
+                edit_note(item_id, new_text)
+            
+            for unlink_id in unlink_ids:
+                unlink_notes(item_id, unlink_id)
+            
+            for link_id in link_ids:
+                link_notes(item_id, link_id)
+        
+        elif item_type == "task":
+            # Handle task editing options
+            new_title = None
+            new_due = None
+            note_text = None
+            recur_pattern = None
+            
+            i = 0
+            while i < len(options):
+                if options[i] == "-text" and i + 1 < len(options):
+                    new_title = options[i + 1]
+                    i += 2
+                elif options[i] == "-due" and i + 1 < len(options):
+                    new_due = parse_due(options[i + 1])
+                    i += 2
+                elif options[i] == "-note" and i + 1 < len(options):
+                    note_text = options[i + 1]
+                    i += 2
+                elif options[i] == "-recur" and i + 1 < len(options):
+                    recur_pattern = options[i + 1]
+                    i += 2
+                else:
+                    # Skip unknown option
+                    i += 1
+            
+            # Perform operations
             if new_title:
-                edit_task(task_id, new_title)
+                edit_task(item_id, new_title)
             
             if new_due:
                 with sqlite3.connect(DB_FILE) as conn:
                     conn.execute(
                         "UPDATE tasks SET due_date=? WHERE id=?",
-                        (new_due.strftime("%Y-%m-%d"), task_id)
+                        (new_due.strftime("%Y-%m-%d"), item_id)
                     )
-                    print(f"Updated due date for task {task_id} to {new_due.strftime('%Y-%m-%d')}")
+                    print(f"Updated due date for task {item_id} to {new_due.strftime('%Y-%m-%d')}")
             
             if note_text:
                 # Add note to the task
-                add_note([task_id], note_text)
+                add_note([item_id], note_text)
                 
             if recur_pattern:
                 # Validate and set recur pattern
-                if set_task_recur([task_id], recur_pattern):
-                    print(f"Set recur pattern '{recur_pattern}' for task {task_id}")
-        else:
-            # Otherwise, treat as adding tasks (original functionality)
-            add_task(" ".join(rest).split(","))
-    elif cmd in ["note", "n"] and rest:  # Handle note commands with arguments
-        # Check if first argument is a single digit/number (for note lookup)
-        if len(rest) == 1 and rest[0].isdigit():
-            # View specific note with links
-            note_id = int(rest[0])
-            show_note_details(note_id)
-        elif len(rest) >= 2 and rest[0].isdigit():
-            # Handle consolidated note edit command: jrnl note <id> edit [-text <text>] [-link <id>[,<id>,...]] [-unlink <id>[,<id>,...]]
-            note_id = int(rest[0])
-            if rest[1] == "edit":
-                # Parse additional arguments for editing (format: -flag value)
-                new_text = None
-                link_ids = []
-                unlink_ids = []
-                
-                i = 2
-                while i < len(rest):
-                    if rest[i] == "-text" and i + 1 < len(rest):
-                        new_text = rest[i + 1]
-                        i += 2
-                    elif rest[i] == "-link" and i + 1 < len(rest):
-                        # Parse comma-separated list of IDs to link
-                        ids_str = rest[i + 1]
-                        ids = ids_str.split(",")
-                        link_ids = [int(id_str) for id_str in ids if id_str.isdigit()]
-                        i += 2
-                    elif rest[i] == "-unlink" and i + 1 < len(rest):
-                        # Parse comma-separated list of IDs to unlink
-                        ids_str = rest[i + 1]
-                        ids = ids_str.split(",")
-                        unlink_ids = [int(id_str) for id_str in ids if id_str.isdigit()]
-                        i += 2
-                    else:
-                        # Skip unknown option
-                        i += 1
-                
-                # Perform operations in order: edit text, then unlink, then link
-                if new_text:
-                    edit_note(note_id, new_text)
-                
-                for unlink_id in unlink_ids:
-                    unlink_notes(note_id, unlink_id)
-                
-                for link_id in link_ids:
-                    link_notes(note_id, link_id)
-            else:
-                # Handle legacy format (if needed) or error
-                print(f"Error: Unknown command 'jrnl note {rest[0]} {rest[1]}'. Use 'edit' for editing notes.")
-        elif len(rest) >= 3 and rest[0] in ["link", "unlink"] and all(arg.isdigit() for arg in rest[1:3]):
-            # The old link/unlink commands have been replaced with the consolidated command
-            print("Error: The 'link' and 'unlink' commands have been removed. Use 'jrnl note <id> edit link:<id>[,<id>,...]' and 'jrnl note <id> edit unlink:<id>[,<id>,...]' instead.")
-        elif all(c.isdigit() or c == "," for c in rest[0]):
-            # Add note to tasks - this functionality has been replaced with the consolidated command
-            print("Error: Adding notes to tasks using 'jrnl note <task_id> <text>' has been removed. Use 'jrnl task <id> edit -note <text>' instead.")
-        else:
-            # Add standalone note
-            text = " ".join(rest)
-            if text:
-                add_note([], text)
-            else:
-                print("Error: Please provide note text")
+                if set_task_recur([item_id], recur_pattern):
+                    print(f"Set recur pattern '{recur_pattern}' for task {item_id}")
     elif cmd == "edit":
         if rest and len(rest) >= 2:
             item_identifier = rest[0]
@@ -1011,101 +1190,88 @@ def main():
                 print("Error: The 'edit' command has been removed for tasks. For task editing, use 'jrnl task <id> edit -text <new text>'. For note editing, use 'jrnl note <id> edit text:<new text>'.")
         else:
             print("Error: Please use the consolidated commands: 'jrnl task <id> edit' or 'jrnl note <id> edit'")
-    elif cmd == "rm":
-        if rest:
-            task_ids = []
-            note_ids = []
+    elif cmd == "edit":
+        if rest and len(rest) >= 2:
+            item_identifier = rest[0]
+            new_text = " ".join(rest[1:])
             
-            # Handle all arguments
-            for arg in rest:
-                # Handle comma-separated IDs
-                id_parts = arg.split(",")
-                for id_part in id_parts:
-                    # Check if argument has a prefix
-                    if id_part.startswith("t") and id_part[1:].isdigit():
-                        task_ids.append(int(id_part[1:]))
-                    elif id_part.startswith("n") and id_part[1:].isdigit():
-                        note_ids.append(int(id_part[1:]))
-                    elif id_part.isdigit():
-                        # For backward compatibility, assume it's a task ID
-                        task_ids.append(int(id_part))
-                    else:
-                        print(f"Error: Invalid ID format '{id_part}'. Use 't<ID>' for tasks or 'n<ID>' for notes")
-                        return
-            
-            # Delete items
-            if task_ids:
-                delete_task(task_ids)
-            if note_ids:
-                delete_note(note_ids)
+            # Check if the identifier starts with 't' (task)
+            if item_identifier.startswith("t") and item_identifier[1:].isdigit():
+                print("Error: The 'edit' command for tasks has been removed. Use 'jrnl edit task <id> [-text <text>] [-due <text>] [-note <text>] [-recur <Nd|Nw|Nm|Ny>]' instead.")
+            else:
+                print("Error: The 'edit' command has been removed for tasks. For task editing, use 'jrnl edit task <id> [-text <text>] [-due <text>] [-note <text>] [-recur <Nd|Nw|Nm|Ny>]'. For note editing, use 'jrnl edit note <id> [-text <text>] [-link <id>[,<id>,...]] [-unlink <id>[,<id>,...]]'.")
         else:
-            print("Error: Please provide IDs to delete")
+            print("Error: Please use the consolidated commands: 'jrnl edit task <id> [options]' or 'jrnl edit note <id> [options]'")
+    elif cmd == "rm":
+        if rest and len(rest) >= 2:
+            # Consolidated syntax: jrnl rm <note|task> <id>[,<id>,...]
+            item_type = rest[0].lower()
+            ids_str = rest[1]
+            ids = [int(id_str) for id_str in ids_str.split(",") if id_str.isdigit()]
+            
+            if item_type == "note":
+                delete_note(ids)
+            elif item_type == "task":
+                delete_task(ids)
+            else:
+                print("Error: Invalid item type. Use 'note' or 'task'")
+                return
+        else:
+            print("Error: Please use the consolidated command: 'jrnl rm <note|task> <id>[,<id>,...]'. The old syntax 'jrnl rm t<id>[,n<id>...] has been removed.'")
     elif cmd in ["task", "t"]:
         show_task()
     elif cmd in ["note", "n"]:
         show_note()
     elif cmd == "done" and not rest:  # Only if no additional arguments (to distinguish from 'done' status command)
-        show_completed_tasks()
+        # The old done command has been removed
+        print("Error: The 'jrnl done' command has been removed. Use 'jrnl list task done' instead.")
     elif cmd in ["done", "x"] and rest:
-        # Parse task IDs and note text
-        ids = []
-        note_text = ""
-        
-        # Look for task IDs in the arguments (numbers and commas)
-        for i, arg in enumerate(rest):
-            if all(c.isdigit() or c == "," for c in arg):
-                ids.extend([int(i) for i in arg.split(",")])
-            else:
-                # Everything after the task IDs is considered note text
-                note_text = " ".join(rest[i:])
-                break
-        
-        if not ids:
-            print("Error: Please provide valid task IDs and note text")
-            return
-            
-        if not note_text:
-            print("Error: Please provide a note for completing the task(s)")
-            return
-        
-        # Update task status and add the note
-        update_task_status(ids, "done", note_text)
+        # The old done command has been removed
+        print("Error: The 'jrnl done <id> <note>' command has been removed. Use 'jrnl done task <id>[,<id>...] <note text>' instead.")
     elif cmd in ["status", "s"]:
-        show_tasks_by_status()
+        # The old status command has been removed
+        print("Error: The 'jrnl status' command has been removed. Use 'jrnl list task status' instead.")
     elif cmd in ["due", "d"]:
-        if rest and all(c.isdigit() or c == "," for c in rest[0]):
-            # The 'due' command for changing due dates has been replaced with the consolidated command
-            print("Error: The 'due' command for changing due dates has been removed. Use 'jrnl task <id> edit -due <date>' instead.")
-        else:
-            show_due()
+        # The old due command has been removed
+        print("Error: The 'jrnl due' command has been removed. Use 'jrnl list task due' instead.")
     elif cmd == "recur":
         # The 'recur' command has been replaced with the consolidated command
         print("Error: The 'recur' command has been removed. Use 'jrnl task <id> edit -recur <Nd|Nw|Nm|Ny>' instead.")
-    elif cmd in ["waiting", "start", "restart"]:  # Removed "done" from here
-        if rest:
-            ids = []
-            for arg in rest:
-                if all(c.isdigit() or c == "," for c in arg):
-                    ids.extend([int(i) for i in arg.split(",")])
-                else:
-                    print(f"Error: Invalid task ID '{arg}'")
-                    return
-            if ids:
-                # "restart" should set status back to "todo"
-                # "start" should set status to "doing"
-                status = "todo" if cmd == "restart" else ("doing" if cmd == "start" else cmd)
-                update_task_status(ids, status)
+    elif cmd in ["waiting", "start", "restart"]:
+        # The old status commands have been removed
+        print(f"Error: The 'jrnl {cmd}' command has been removed. Use 'jrnl {cmd} task <id>[,<id>...]' instead.")
+    elif cmd == "delete":
+        # The delete command should be handled by 'jrnl rm task ...'
+        print("Error: The 'jrnl delete' command has been removed. Use 'jrnl rm task <id>[,<id>...]' instead.")
+    elif cmd == "list" and len(rest) >= 1:
+        # New consolidated command: jrnl list <page|note|task> <optional: due|status|done>
+        if rest[0] == "page":
+            show_journal()
+        elif rest[0] == "note":
+            show_note()
+        elif rest[0] == "task" and len(rest) == 1:
+            # Default to showing tasks grouped by creation date (similar to notes)
+            show_task()
+        elif rest[0] == "task" and len(rest) >= 2:
+            if rest[1] == "due":
+                show_due()
+            elif rest[1] == "status":
+                show_tasks_by_status()
+            elif rest[1] == "done":
+                show_completed_tasks()
             else:
-                print("Error: Please provide valid task IDs")
+                print("Error: Invalid task list option. Use 'due', 'status', or 'done'")
         else:
-            print("Error: Please provide task IDs")
-    elif cmd in ["find", "f"]:
+            print("Error: Invalid syntax. Use 'jrnl list <page|note|task>' or 'jrnl list task <due|status|done>'")
+    elif cmd == "find":
         if rest:
             search_text = " ".join(rest)
             grouped, tasks, notes = search_tasks_and_notes(search_text)
             display_search_results(grouped)
         else:
             print("Error: Please provide search text")
+    elif cmd == "f":
+        print("Error: The 'jrnl f' command has been removed. Use 'jrnl find <text>' instead.")
     elif cmd in ["help", "h"]:
         print("""jrnl - Command Line Journal and Task Manager
 
@@ -1114,24 +1280,16 @@ USAGE:
 
 COMMANDS:
     jrnl                    Show tasks grouped by due date (default view) (Overdue / Due Today / This Week / This Month / Future / No Due Date)
-    jrnl page|p        Show journal (grouped by creation date)
-    jrnl task|t <text>[,<text>...]     Add tasks
-    jrnl task|t <id> edit [-text <text>] [-due <text>] [-note <text>] [-recur <Nd|Nw|Nm|Ny>]  Edit task with optional parameters
-    jrnl note|n        Show all notes
-    jrnl note|n <text>          Add standalone note (to add note to task, use 'jrnl task <id> edit -note <text>')
-    jrnl note|n <id>          Show specific note with linked notes
-    jrnl note|n <id> edit [-text <text>] [-link <id>[,<id>,...]] [-unlink <id>[,<id>,...]]  Edit note with optional text, linking, unlinking
-    jrnl task|t        Show all unfinished tasks
-    jrnl done               Show all completed tasks grouped by completion date
-    jrnl status|s      Show tasks grouped by status (Todo, Doing, Waiting)
-    jrnl due|d                Show tasks grouped by due date (Overdue / Due Today / This Week / This Month / Future / No Due Date)
-    jrnl restart <id>[,<id>...]   Mark tasks as not done
-    jrnl start <id>[,<id>...]     Mark tasks as in progress
-    jrnl waiting <id>[,<id>...]   Mark tasks as waiting
-    jrnl done|x <id>[,<id>...] <note text>      Mark tasks as done with a completion note
-    jrnl find|f <text>        Search for tasks and notes containing text
-    jrnl rm t<id>[,n<id>...]      Delete tasks (t) or notes (n)
-    jrnl help|h        Show this help message
+    jrnl new note <text> [-link <id>[,<id>,...]]      Add a new note with optional links
+    jrnl new task <text> [-due @<YYYY-MM-DD|today|tomorrow|eow|eom|eoy>] [-recur <Nd|Nw|Nm|Ny>]     Add a new task with optional due date and recurrence
+    jrnl edit note <id> [-text <text>] [-link <id>[,<id>,...]] [-unlink <id>[,<id>,...]]  Edit note with optional text, linking, unlinking
+    jrnl edit task <id> [-text <text>] [-due <text>] [-note <text>] [-recur <Nd|Nw|Nm|Ny>]  Edit task with optional parameters
+    jrnl rm <note|task> <id>[,<id>,...]      Delete notes or tasks by ID
+    jrnl list <page|note|task> [due|status|done]  List items with optional grouping
+    jrnl show <note|task> <id>               Show specific note or task
+    jrnl <start|restart|waiting|done> task <id>[,<id>,...]  Task status operations
+    jrnl find <text>        Search for tasks and notes containing text (supports wildcards: * = any chars, ? = single char)
+    jrnl help|h             Show this help message
 """)
 
 if __name__ == "__main__":
