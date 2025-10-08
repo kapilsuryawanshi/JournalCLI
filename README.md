@@ -23,28 +23,50 @@ No installation required – simply run the Python script directly.
 
 ### Basic Commands
 ```
-jrnl                    Show tasks grouped by due date (default view) (Overdue / Due Today / Due Tomorrow / This Week / This Month / Future / No Due Date)
-jrnl page|p             Show journal (grouped by creation date)
-jrnl new note <text> [-link <id>[,<id>,...]]      Add a new note with optional links
-jrnl new task <text> [-due @<YYYY-MM-DD|today|tomorrow|eow|eom|eoy>] [-recur <Nd|Nw|Nm|Ny>]     Add a new task with optional due date and recurrence
-jrnl edit note <id> [-text <text>] [-link <id>[,<id>,...]] [-unlink <id>[,<id>,...]]  Edit note with optional text, linking, unlinking
-jrnl edit task <id> [-text <text>] [-due <text>] [-note <text>] [-recur <Nd|Nw|Nm|Ny>]  Edit task with optional parameters
-jrnl rm <note|task> <id>[,<id>,...]      Delete notes or tasks by ID
-jrnl task|t <id> edit [-text <text>] [-due <text>] [-note <text>] [-recur <Nd|Nw|Nm|Ny>]  (DEPRECATED) Edit task with optional parameters
-jrnl note|n             Show all notes
-jrnl note|n <id>        Show specific note with linked notes
-jrnl note|n <id> edit [-text <text>] [-link <id>[,<id>,...]] [-unlink <id>[,<id>,...]]  (DEPRECATED) Edit note with optional text, linking, unlinking
-jrnl task|t             Show all unfinished tasks
-jrnl done               Show all completed tasks grouped by completion date
-jrnl status|s           Show tasks grouped by status (Todo, Doing, Waiting)
-jrnl due|d              Show tasks grouped by due date (Overdue / Due Today / This Week / This Month / Future / No Due Date)
-jrnl restart <id>[,<id>...]   Mark tasks as not done
-jrnl start <id>[,<id>...]     Mark tasks as in progress
-jrnl waiting <id>[,<id>...]   Mark tasks as waiting
-jrnl done|x <id>[,<id>...] <note text>      Mark tasks as done with a completion note
-jrnl find <text>        Search for tasks and notes containing text (supports wildcards: *, ?)
-jrnl rm t<id>[,n<id>...]      (DEPRECATED) Delete tasks (t) or notes (n)
-jrnl help|h             Show this help message
+jrnl
+    Show tasks grouped by due date (default view) (Overdue / Due Today / Due Tomorrow / This Week / This Month / Future / No Due Date)
+jrnl page|p
+    Show journal (grouped by creation date)
+jrnl new note <text> [-link <id>[,<id>,...]]
+    Add a new note with optional links
+jrnl new task <text> [-due @<YYYY-MM-DD|today|tomorrow|eow|eom|eoy>] [-recur <Nd|Nw|Nm|Ny>]
+    Add a new task with optional due date and recurrence
+jrnl edit note <id> [-text <text>] [-link <id>[,<id>,...]] [-unlink <id>[,<id>,...]]
+    Edit note with optional text, linking, unlinking
+jrnl edit task <id> [-text <text>] [-due <text>] [-note <text>] [-recur <Nd|Nw|Nm|Ny>]
+    Edit task with optional parameters
+jrnl rm <note|task> <id>[,<id>,...]
+    Delete notes or tasks by ID
+jrnl task|t <id> edit [-text <text>] [-due <text>] [-note <text>] [-recur <Nd|Nw|Nm|Ny>]
+    (DEPRECATED) Edit task with optional parameters
+jrnl note|n
+    Show all notes
+jrnl note|n <id>
+    Show specific note with linked notes
+jrnl note|n <id> edit [-text <text>] [-link <id>[,<id>,...]] [-unlink <id>[,<id>,...]]
+    (DEPRECATED) Edit note with optional text, linking, unlinking
+jrnl task|t
+    Show all unfinished tasks
+jrnl done
+    Show all completed tasks grouped by completion date
+jrnl status|s
+    Show tasks grouped by status (Todo, Doing, Waiting)
+jrnl due|d
+    Show tasks grouped by due date (Overdue / Due Today / This Week / This Month / Future / No Due Date)
+jrnl restart <id>[,<id>...]
+    Mark tasks as not done
+jrnl start <id>[,<id>...]
+    Mark tasks as in progress
+jrnl waiting <id>[,<id>...]
+    Mark tasks as waiting
+jrnl done|x <id>[,<id>...] <note text>
+    Mark tasks as done with a completion note
+jrnl find <text>
+    Search for tasks and notes containing text (supports wildcards: *, ?)
+jrnl rm t<id>[,n<id>...]
+    (DEPRECATED) Delete tasks (t) or notes (n)
+jrnl help|h
+    Show this help message
 ```
 
 ### Search
