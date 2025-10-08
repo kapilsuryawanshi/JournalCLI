@@ -1,219 +1,249 @@
-**Objective:**
-Build a lightweight, command-line journaling and task management application named `jrnl` in Python. The tool should be simple to use, low cognitive load, and effective for students or employees during work hours.
+# Product Requirements Document (PRD) - jrnl CLI Application
 
----
+## 1. Product Overview
 
-### General Requirements
+**Product Name:** jrnl  
+**Type:** Command-line journal and task management application  
+**Primary Language:** Python  
+**Target Users:** Students, professionals, and anyone seeking a lightweight task and note management solution  
+**Platform:** Cross-platform (Windows, macOS, Linux) via command-line interface
 
-* Runs as a command-line program: `jrnl [command] [arguments...]`.
-* Stores all data in a local SQLite database.
-* Supports two entities: **tasks** and **notes**.
+## 2. Vision Statement
 
----
+jrnl is a minimalist, command-line based tool designed for users who want to manage their tasks and notes without the overhead of complex applications. The tool prioritizes speed, simplicity, and low cognitive load to integrate seamlessly into daily workflows.
 
-### Data Model
+## 3. Core Objectives
 
-**Task**
+1. Provide a fast, efficient command-line interface for task and note management
+2. Offer simple data persistence using a local SQLite database
+3. Support both task tracking and note-taking capabilities
+4. Enable organization through due dates, status tracking, and linking
+5. Maintain a minimalistic design that prioritizes usability over features
+6. Allow for programmatic integration with other tools and scripts
 
-* `id` (auto increment)
-* `title` (string)
-* `status` (todo | doing | waiting | done, default = todo)
-* `creation_date` (auto set)
-* `due_date` (default = creation date, can be overridden)
-* `completion_date` (set when moved to `done`)
+## 4. Functional Requirements
 
-**Note**
+### 4.1 Data Model
 
-* `id` (auto increment)
-* `text` (string)
-* `creation_date` (auto set)
-* `task_id` (nullable, links to task if provided)
+#### Task Entity
+- `id`: Auto-incrementing primary key
+- `title`: String representing the task title
+- `status`: Enum (todo | doing | waiting | done), default = todo
+- `creation_date`: Timestamp automatically set
+- `due_date`: Timestamp, default = creation date (can be overridden)
+- `completion_date`: Timestamp set when status changes to 'done'
+- `recur_pattern`: String for recurring task pattern (optional)
+- `next_occurrence`: Timestamp for next occurrence of recurring task (optional)
 
----
+#### Note Entity
+- `id`: Auto-incrementing primary key
+- `text`: String content of the note
+- `creation_date`: Timestamp automatically set
+- `task_id`: Nullable foreign key linking to a task (optional)
+- `parent_note_id`: Nullable foreign key for hierarchical note relationships (optional)
 
-### Commands
+#### Note Link Entity
+- `id`: Auto-incrementing primary key
+- `note1_id`: Foreign key to note table
+- `note2_id`: Foreign key to note table
+- `created_date`: Timestamp automatically set
 
-1. **Add tasks**
+### 4.2 Command Set
 
-   ```
-   jrnl . <text>[,<text>...]
-   ```
+#### 4.2.1 Creation Commands
 
-   * Creates one or more tasks.
-   * Each `<text>` is a task title.
-   * A task title may include an optional due date keyword or explicit date using `@`:
-
-     * Keywords: `today`, `tomorrow`, `eow` (end of week), `eom` (end of month), `eoy` (end of year), day names (monday, tuesday, etc.)
-     * Example: `jrnl . "Submit report @tomorrow, Finish taxes @2025-10-15"`
-
-2. **Add notes**
-
-   ```
-   jrnl - [<task id>[,<task id>...]] <text>
-   ```
-
-   * Creates a note.
-   * If task IDs are provided, links the note to those tasks. Otherwise, note is standalone.
-
-3. **View journal (default)**
-
-   ```
-   jrnl
-   ```
-
-   * Shows outline view grouped by **creation date (ascending)**.
-   * Within each day:
-
-     * Task format: `<id>. [ ] <title>`
-
-       * `[x]` if done.
-       * Show due date inline `(due: YYYY-MM-DD)`.
-       * Overdue tasks = red font.
-       * Due today = cyan.
-       * Status colors:
-
-         * `doing` → yellow text
-         * `waiting` → gray background
-         * `done` → green text
-     * Notes indented under parent task: `<id>. <text>`.
-
-6. **View tasks grouped by status**
-
-   ```
-   jrnl status
-   ```
-
-   * Shows tasks grouped by status in order: Todo, Doing, Waiting.
-   * Does not show Done tasks.
-   * Tasks within each status group are sorted by due date in ascending order.
-   * Tasks are displayed with appropriate color coding (gray for waiting, yellow background for doing).
-
-7. **View grouped by due date**
-
-   ```
-   jrnl due
-   ```
-
-   * Groups tasks as: Overdue / Due Today / This Week / This Month / Future / No Due Date.
-   * Sorted by due date within groups.
-   * Shows notes indented beneath their associated tasks.
-   * Notes are displayed with yellow foreground for better visibility.
-   * Tasks with "doing" status are displayed with yellow background and black text.
-   * Tasks with "waiting" status are displayed with gray background.
-
-5. **View only tasks**
-
-   ```
-   jrnl tasks
-   ```
-
-   * Shows all tasks not marked `done`.
-   * Tasks with "waiting" status are displayed with gray background.
-
-6. **View tasks grouped by status**
-
-   ```
-   jrnl status
-   ```
-
-   * Shows tasks grouped by status in order: Todo, Doing, Waiting.
-   * Does not show Done tasks.
-   * Tasks within each status group are sorted by due date in ascending order.
-   * Tasks are displayed with appropriate color coding (gray for waiting, yellow background for doing).
-
-7. **View only notes**
-
-   ```
-   jrnl notes
-   ```
-
-   * Shows all notes.
-
-8. **Search tasks and notes**
-
-   ```
-   jrnl find <text>
-   jrnl f <text>
-   ```
-
-   * Searches for tasks and notes containing the specified text.
-   * Shows matching tasks and notes in the same format as the default journal view.
-   * Search is case-insensitive.
-   * If no matches are found, shows a message indicating no results.
-
-9. **Edit tasks and notes**
-
-   ```
-   jrnl edit t<id> <new title>
-   jrnl edit n<id> <new text>
-   ```
-
-   * Edits the title of a task or the text of a note.
-   * `t<id>` specifies a task ID to edit.
-   * `n<id>` specifies a note ID to edit.
-   * `<new title>` or `<new text>` is the new content for the task or note.
-
-7. **Change task status**
-
-   ```
-   jrnl undone <id>[,<id>...]
-   jrnl doing <id>[,<id>...]
-   jrnl waiting <id>[,<id>...]
-   jrnl done <id>[,<id>...] <note text>
-   ```
-
-   * Updates task status.
-   * `undone` resets a completed task back to `todo`.
-   * `done` marks tasks as completed and requires a note to be added to the completed tasks.
-   * Shortcuts:
-
-     * `jrnl x <id>[,<id>...] <note text>` = mark task as `done` with a note.
-
-8. **Adjust due date**
-
-   ```
-   jrnl due <id> <keyword|YYYY-MM-DD>
-   ```
-
-   * Changes due date for a task.
-   * Supports same keywords as task creation (`today`, `tomorrow`, `eow`, `eom`, `eoy`, day names).
-
-9. **Help**
-
-   ```
-   jrnl help
-   ```
-
-   * Prints list of all commands with usage examples.
-
----
-
-### Example Commands
-
+**Create Task(s)**
 ```
-jrnl
-jrnl . Do homework,Read article @tomorrow
-jrnl - 2 Remember to check references
-jrnl done 2
-jrnl due 1 eom
-jrnl due
-jrnl tasks
-jrnl notes
-jrnl find "important"
-jrnl f "meeting"
-jrnl edit t1 "New task title"
-jrnl edit n1 "New note text"
+jrnl new task <text> [-due @<YYYY-MM-DD|keyword>] [-recur <Nd|Nw|Nm|Ny>]
+```
+- Creates one or more tasks with optional due dates and recurrence
+- Keywords: `today`, `tomorrow`, `eow` (end of week), `eom` (end of month), `eoy` (end of year), day names (monday, tuesday, etc.)
+- Recurrence: `Nd` (N days), `Nw` (N weeks), `Nm` (N months), `Ny` (N years)
+
+**Create Note**
+```
+jrnl new note <text> [-link <id>[,<id>,...]]
+```
+- Creates a standalone note or links it to existing notes
+- Optional linking to other notes for knowledge graph functionality
+
+#### 4.2.2 List/View Commands
+
+**Default View** (replaces `jrnl`)
+```
+jrnl list task due
+```
+- Shows tasks grouped by due date (Overdue / Due Today / Due Tomorrow / This Week / This Month / Future / No Due Date)
+
+**Journal View** (replaces `jrnl page|p`)
+```
+jrnl list page
+```
+- Shows journal grouped by creation date
+
+**Task List** (replaces `jrnl tasks`)
+```
+jrnl list task
+```
+- Shows all unfinished tasks grouped by creation date
+
+**Status View** (replaces `jrnl status|s`)
+```
+jrnl list task status
+```
+- Shows tasks grouped by status (Todo, Doing, Waiting)
+
+**Due Date View** (replaces `jrnl due|d`)
+```
+jrnl list task due
+```
+- Shows tasks grouped by due date
+
+**Completion View** (replaces `jrnl done`)
+```
+jrnl list task done
+```
+- Shows all completed tasks grouped by completion date
+
+**Note List** (replaces `jrnl notes`)
+```
+jrnl list note
+```
+- Shows all notes
+
+**Specific Note View** (replaces `jrnl note <id>`)
+```
+jrnl show note <id>
+```
+- Shows a specific note with linked notes
+
+**Specific Task View**
+```
+jrnl show task <id>
+```
+- Shows a specific task with related notes
+
+#### 4.2.3 Modification Commands
+
+**Edit Task** (consolidates old edit syntax)
+```
+jrnl edit task <id> [-text <text>] [-due <text>] [-note <text>] [-recur <Nd|Nw|Nm|Ny>]
+```
+
+**Edit Note** (consolidates old edit syntax)
+```
+jrnl edit note <id> [-text <text>] [-link <id>[,<id>,...]] [-unlink <id>[,<id>,...]]
+```
+
+**Task Status Operations**
+```
+jrnl start task <id>[,<id>...]         # Mark as 'doing'
+jrnl restart task <id>[,<id>...]       # Mark as 'todo'
+jrnl waiting task <id>[,<id>...]       # Mark as 'waiting'
+jrnl done task <id>[,<id>...] <note>   # Mark as 'done' with completion note
+```
+
+**Adjust Due Date**
+```
+jrnl due task <id> <keyword|YYYY-MM-DD>
+```
+
+#### 4.2.4 Deletion Commands
+
+**Delete Notes/Tasks**
+```
+jrnl rm <note|task> <id>[,<id>,...]
+```
+
+#### 4.2.5 Search Command
+
+**Search All**
+```
+jrnl find <text>
+```
+- Search for tasks and notes containing text (supports wildcards: *, ?)
+
+### 4.3 User Experience Features
+
+#### 4.3.1 Visual Design
+- Color-coded status indicators:
+  - `doing`: Yellow background
+  - `waiting`: Gray background
+  - `done`: Green text
+  - Overdue: Red text
+  - Due today: Cyan text
+
+#### 4.3.2 Help System
+```
 jrnl help
 ```
+- Comprehensive help with usage examples for all commands
 
----
+### 4.4 Advanced Features
 
-### UX Considerations
+#### 4.4.1 Note Linking
+- Ability to create connections between notes
+- Visualization of linked notes when viewing a specific note
+- Support for knowledge graph creation (Zettelkasten method)
 
-* Aliases: `t` = tasks, `n` = notes, `d` = due, `f` = find, `h` = help.
-* Minimal color coding, only where it adds clarity (status + due state).
-* Keep commands terse; most operations should be single-line.
-* Default view = creation-date outline, for quick "what happened today."
-* Optional `due` view helps with forward-looking planning.
+#### 4.4.2 Recurring Tasks
+- Support for daily, weekly, monthly, and yearly recurring tasks
+- Automatic creation of next occurrence when task is marked 'done'
 
----
+#### 4.4.3 Wildcard Search
+- Support for `*` (matches any sequence of characters) and `?` (matches single character)
+- Case-insensitive search functionality
+
+## 5. Non-Functional Requirements
+
+### 5.1 Performance
+- Application should start and execute commands within 1 second
+- Database operations should complete within 200ms for typical usage
+- Search functionality should return results within 500ms
+
+### 5.2 Reliability
+- All data stored in local SQLite database
+- Database schema changes should be handled with migration scripts
+- Backup of database should be possible
+
+### 5.3 Usability
+- Commands should be intuitive and require minimal mental effort
+- Consistent command structure throughout application
+- Clear error messages for invalid input
+- Help system accessible from any command
+
+### 5.4 Scalability
+- Application should handle up to 10,000 tasks and notes efficiently
+- No significant performance degradation as data set grows
+
+## 6. Integration Capabilities
+
+### 6.1 Programmatic Access
+- Commands can be invoked from other programs via subprocess calls
+- Output can be formatted for parsing by other tools
+
+### 6.2 Scripting Support
+- Supports bulk operations through scripting
+- Commands can be chained together in scripts
+
+## 7. Success Metrics
+
+1. Time to complete common operations (add task, mark done, etc.) should be under 3 seconds
+2. User satisfaction with simplicity and speed of the interface
+3. Adoption by users seeking lightweight task management solutions
+4. Successful implementation of all planned features with minimal bugs
+
+## 8. Constraints
+
+1. Must run in command-line environment
+2. Can only use Python standard library and minimal external dependencies
+3. Data must be stored locally (no cloud requirement)
+4. Application must be distributable as a single Python script or a small package
+
+## 9. Assumptions & Dependencies
+
+1. Python 3.x is available on user's system
+2. SQLite is available (typically bundled with Python)
+3. Colorama library for colored output (external dependency)
+4. User is comfortable with command-line interface
+5. Local file system access for database storage
