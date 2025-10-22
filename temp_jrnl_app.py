@@ -4,7 +4,7 @@ from datetime import datetime, timedelta, date
 from collections import defaultdict
 from colorama import Fore, Back, Style, init
 
-DB_FILE = "jrnl.db"
+DB_FILE = "test_jrnl.db"
 init(autoreset=True)  # colorama setup
 
 # --- Date Helpers ---
