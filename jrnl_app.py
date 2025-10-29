@@ -1270,10 +1270,6 @@ def main():
             display_search_results(grouped)
         else:
             print("Error: Please provide search text")
-    elif cmd == "f":
-        print("Error: The 'jrnl f' command has been removed. Use 'jrnl search <text>' instead.")
-    elif cmd == "h":
-        print("Error: The 'jrnl h' command has been removed. Use 'jrnl help' instead.")
     elif cmd == "help":
         print("""j - Command Line Journal and Task Manager
 
