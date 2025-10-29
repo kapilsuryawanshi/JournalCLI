@@ -62,7 +62,6 @@ Shows tasks grouped by due date: Overdue, Due Today, Due Tomorrow, This Week, Th
 **List journal by creation date**:
 ```
 j list page
-j page  # Alternative command
 ```
 Shows all entries grouped by creation date
 
@@ -74,27 +73,23 @@ j list task
 **List tasks by status**:
 ```
 j list task status
-j status  # Alternative command
 ```
 Shows tasks grouped by status: Todo, Doing, Waiting
 
 **List completed tasks**:
 ```
 j list task done
-j done  # Alternative command
 ```
 Shows completed tasks grouped by completion date
 
 **List all notes**:
 ```
 j list note
-j notes  # Alternative command
 ```
 
 **Show specific note with linked notes**:
 ```
 j show note <id>
-j note <id>  # Alternative command
 ```
 
 **Show specific task**:
@@ -130,13 +125,11 @@ Examples:
 **Mark tasks as in progress**:
 ```
 j start task <id>[,<id>...]
-j doing <id>[,<id>...]  # Alternative command
 ```
 
 **Mark tasks as not done**:
 ```
 j restart task <id>[,<id>...]
-j undone <id>[,<id>...]  # Alternative command
 ```
 
 **Mark tasks as waiting**:
@@ -196,7 +189,6 @@ Examples:
 **Show help**:
 ```
 j help
-j h  # Alternative command
 ```
 
 ## Search Functionality
