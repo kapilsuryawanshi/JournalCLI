@@ -106,23 +106,20 @@ def parse_due(keyword):
 
 # --- Display Helpers ---
 
-def format_task(task, indent_level=0):
+def format_task(task, prefix=""):
     # task now has 8 elements: id, title, status, creation_date, due_date, completion_date, recur, pid
     tid, title, status, creation_date, due_date, completion_date, recur, pid = task
     checkbox = "[x]" if status == "done" else "[ ]"
-    
-    # Create indentation based on level
-    indent = "    " * indent_level  # 4 spaces per level
 
     # Color based on status
     if status == "doing":
-        text = indent + Back.YELLOW + Fore.BLACK + f"{checkbox} {title} (id:{tid})" + Style.RESET_ALL
+        text = prefix + Back.YELLOW + Fore.BLACK + f"{checkbox} {title} (id:{tid})" + Style.RESET_ALL
     elif status == "waiting":
-        text = indent + Back.LIGHTBLACK_EX + Fore.WHITE + f"{checkbox} {title} (id:{tid})" + Style.RESET_ALL
+        text = prefix + Back.LIGHTBLACK_EX + Fore.WHITE + f"{checkbox} {title} (id:{tid})" + Style.RESET_ALL
     elif status == "done":
-        text = indent + Fore.GREEN + f"{checkbox} {title} (id:{tid})" + Style.RESET_ALL
+        text = prefix + Fore.GREEN + f"{checkbox} {title} (id:{tid})" + Style.RESET_ALL
     else:  # todo
-        text = indent + f"{checkbox} {title}  (id:{tid})"
+        text = prefix + f"{checkbox} {title}  (id:{tid})"
 
     # Show recur pattern if it exists
     if recur:
@@ -140,6 +137,80 @@ def format_task(task, indent_level=0):
             text += f" (due: {format_date_with_day(due_date)})"
 
     return text + Style.RESET_ALL
+
+def build_task_tree(tasks_list):
+    """
+    Build a tree structure from a list of tasks.
+    Returns a dictionary with root tasks as keys and their children as values.
+    """
+    # Create a dictionary to store tasks by ID for easy lookup
+    task_dict = {task[0]: task for task in tasks_list}  # task[0] is id
+    
+    # Create a dictionary to store children for each task
+    children = {task[0]: [] for task in tasks_list}  # task[0] is id
+    
+    # Build the tree structure
+    root_tasks = []
+    for task in tasks_list:
+        task_id = task[0]  # task[0] is id
+        parent_id = task[7]  # task[7] is pid
+        
+        if parent_id is None or parent_id == 0:
+            # This is a root task
+            root_tasks.append(task)
+        else:
+            # This is a child task, add it to its parent's children
+            if parent_id in children:
+                children[parent_id].append(task)
+    
+    return root_tasks, children, task_dict
+
+def print_task_tree(task, children, task_dict, is_last=True, prefix="", is_root=True):
+    """
+    Recursively print a task and its children in a tree structure using ASCII characters.
+    """
+    task_id = task[0]  # task[0] is id
+    
+    # For root tasks (at the very beginning), we don't use tree characters
+    if is_root:
+        prefix_str = "\t"  # Regular indent for root tasks
+        print(format_task(task, prefix_str))
+    else:
+        # For child tasks, use tree characters
+        if is_last:
+            prefix_str = prefix + "└─ "
+        else:
+            prefix_str = prefix + "├─ "
+        print(format_task(task, prefix_str))
+    
+    # For notes under this task, we need to determine the appropriate prefix
+    with sqlite3.connect(DB_FILE) as conn:
+        notes = conn.execute(
+            "SELECT id,text,creation_date,task_id FROM notes WHERE task_id=?", 
+            (task[0],)  # task[0] is id
+        ).fetchall()
+        
+    # Determine note prefix based on whether this is the last child
+    if is_root:
+        note_prefix = "\t\t"
+    else:
+        note_prefix = prefix + ("    " if is_last else "│   ")
+        
+    for i, note in enumerate(notes):
+        is_last_note = (i == len(notes) - 1) and (task_id not in children or len(children[task_id]) == 0)
+        note_prefix_for_note = note_prefix + ("└─ " if is_last_note else "├─ ")
+        print(format_note(note, note_prefix_for_note))
+    
+    # Recursively print children with appropriate prefixes
+    if task_id in children and children[task_id]:
+        child_count = len(children[task_id])
+        for i, child in enumerate(children[task_id]):
+            is_last_child = (i == child_count - 1)
+            if is_root:
+                child_prefix = "\t"  # For root level, children will start with tab
+            else:
+                child_prefix = prefix + ("    " if is_last else "│   ")
+            print_task_tree(child, children, task_dict, is_last_child, child_prefix, is_root=False)
 
 def build_task_tree(tasks_list):
     """
@@ -303,8 +374,9 @@ def display_search_results(grouped):
             # Build and print task tree for this day
             if tasks_for_day:
                 root_tasks, children, task_dict = build_task_tree(tasks_for_day)
-                for root_task in root_tasks:
-                    print_task_tree(root_task, children, task_dict, indent_level=1)  # 1 for the "\t" prefix)
+                for i, root_task in enumerate(root_tasks):
+                    is_last = (i == len(root_tasks) - 1)
+                    print_task_tree(root_task, children, task_dict, is_last, "", is_root=True)
             
             # Display standalone notes
             for note in notes_for_day:
@@ -638,8 +710,9 @@ def show_journal():
         day_tasks = grouped[day]["tasks"]
         if day_tasks:
             root_tasks, children, task_dict = build_task_tree(day_tasks)
-            for root_task in root_tasks:
-                print_task_tree(root_task, children, task_dict, indent_level=1)  # 1 for the "\t" prefix
+            for i, root_task in enumerate(root_tasks):
+                is_last = (i == len(root_tasks) - 1)
+                print_task_tree(root_task, children, task_dict, is_last, "", is_root=True)
         
         # show standalone notes
         for n in grouped[day]["notes"]:
@@ -701,8 +774,9 @@ def show_due():
             # Build and print task tree for this bucket
             bucket_tasks = buckets[label]
             root_tasks, children, task_dict = build_task_tree(bucket_tasks)
-            for root_task in root_tasks:
-                print_task_tree(root_task, children, task_dict, indent_level=1)  # 1 for the "\t" prefix
+            for i, root_task in enumerate(root_tasks):
+                is_last = (i == len(root_tasks) - 1)
+                print_task_tree(root_task, children, task_dict, is_last, "", is_root=True)
 
 def show_task():
     with sqlite3.connect(DB_FILE) as conn:
@@ -732,8 +806,9 @@ def show_task():
         # Build and print task tree for this day
         day_tasks = grouped[day]
         root_tasks, children, task_dict = build_task_tree(day_tasks)
-        for root_task in root_tasks:
-            print_task_tree(root_task, children, task_dict, indent_level=1)  # 1 for the "\t" prefix
+        for i, root_task in enumerate(root_tasks):
+            is_last = (i == len(root_tasks) - 1)
+            print_task_tree(root_task, children, task_dict, is_last, "", is_root=True)
 
 def show_note():
     with sqlite3.connect(DB_FILE) as conn:
@@ -859,8 +934,9 @@ def show_completed_tasks():
         # Build and print task tree for this completion date
         date_tasks = grouped[completion_date]
         root_tasks, children, task_dict = build_task_tree(date_tasks)
-        for root_task in root_tasks:
-            print_task_tree(root_task, children, task_dict, indent_level=1)  # 1 for the "\t" prefix
+        for i, root_task in enumerate(root_tasks):
+            is_last = (i == len(root_tasks) - 1)
+            print_task_tree(root_task, children, task_dict, is_last, "", is_root=True)
 
 
 def show_tasks_by_status():
@@ -908,8 +984,9 @@ def show_tasks_by_status():
             # Build and print task tree for this status
             status_tasks = grouped[status]
             root_tasks, children, task_dict = build_task_tree(status_tasks)
-            for root_task in root_tasks:
-                print_task_tree(root_task, children, task_dict, indent_level=1)  # 1 for the "\t" prefix
+            for i, root_task in enumerate(root_tasks):
+                is_last = (i == len(root_tasks) - 1)
+                print_task_tree(root_task, children, task_dict, is_last, "", is_root=True)
 
 
 # --- CLI Parser ---
@@ -1151,7 +1228,7 @@ def main():
                 # Build and print the tree for this specific task and its children
                 root_tasks, children, task_dict = build_task_tree(all_related_tasks)
                 if root_tasks:
-                    print_task_tree(root_tasks[0], children, task_dict, indent_level=0)  # No initial indent for top task
+                    print_task_tree(root_tasks[0], children, task_dict, is_last=True, prefix="", is_root=True)  # No initial indent for top task
             else:
                 print(f"Error: Task with ID {item_id} not found")
         else:
