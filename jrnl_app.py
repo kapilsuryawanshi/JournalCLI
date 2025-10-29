@@ -106,20 +106,23 @@ def parse_due(keyword):
 
 # --- Display Helpers ---
 
-def format_task(task):
-    # task now has 7 elements: id, title, status, creation_date, due_date, completion_date, recur
-    tid, title, status, creation_date, due_date, completion_date, recur = task
+def format_task(task, indent_level=0):
+    # task now has 8 elements: id, title, status, creation_date, due_date, completion_date, recur, pid
+    tid, title, status, creation_date, due_date, completion_date, recur, pid = task
     checkbox = "[x]" if status == "done" else "[ ]"
+    
+    # Create indentation based on level
+    indent = "    " * indent_level  # 4 spaces per level
 
     # Color based on status
     if status == "doing":
-        text = Back.YELLOW + Fore.BLACK + f"{checkbox} {title} (id:{tid})" + Style.RESET_ALL
+        text = indent + Back.YELLOW + Fore.BLACK + f"{checkbox} {title} (id:{tid})" + Style.RESET_ALL
     elif status == "waiting":
-        text = Back.LIGHTBLACK_EX + Fore.WHITE + f"{checkbox} {title} (id:{tid})" + Style.RESET_ALL
+        text = indent + Back.LIGHTBLACK_EX + Fore.WHITE + f"{checkbox} {title} (id:{tid})" + Style.RESET_ALL
     elif status == "done":
-        text = Fore.GREEN + f"{checkbox} {title} (id:{tid})" + Style.RESET_ALL
+        text = indent + Fore.GREEN + f"{checkbox} {title} (id:{tid})" + Style.RESET_ALL
     else:  # todo
-        text = f"{checkbox} {title}  (id:{tid})"
+        text = indent + f"{checkbox} {title}  (id:{tid})"
 
     # Show recur pattern if it exists
     if recur:
@@ -138,6 +141,55 @@ def format_task(task):
 
     return text + Style.RESET_ALL
 
+def build_task_tree(tasks_list):
+    """
+    Build a tree structure from a list of tasks.
+    Returns a dictionary with root tasks as keys and their children as values.
+    """
+    # Create a dictionary to store tasks by ID for easy lookup
+    task_dict = {task[0]: task for task in tasks_list}  # task[0] is id
+    
+    # Create a dictionary to store children for each task
+    children = {task[0]: [] for task in tasks_list}  # task[0] is id
+    
+    # Build the tree structure
+    root_tasks = []
+    for task in tasks_list:
+        task_id = task[0]  # task[0] is id
+        parent_id = task[7]  # task[7] is pid
+        
+        if parent_id is None or parent_id == 0:
+            # This is a root task
+            root_tasks.append(task)
+        else:
+            # This is a child task, add it to its parent's children
+            if parent_id in children:
+                children[parent_id].append(task)
+    
+    return root_tasks, children, task_dict
+
+def print_task_tree(task, children, task_dict, indent_level=0):
+    """
+    Recursively print a task and its children in a tree structure.
+    """
+    print(format_task(task, indent_level))
+    
+    # Print notes for this task if any exist
+    with sqlite3.connect(DB_FILE) as conn:
+        notes = conn.execute(
+            "SELECT id,text,creation_date,task_id FROM notes WHERE task_id=?", 
+            (task[0],)  # task[0] is id
+        ).fetchall()
+        
+    for note in notes:
+        print(format_note(note, indent="\t" + "    " * (indent_level + 1)))
+    
+    # Recursively print children
+    task_id = task[0]  # task[0] is id
+    if task_id in children:
+        for child in children[task_id]:
+            print_task_tree(child, children, task_dict, indent_level + 1)
+
 def format_note(note, indent="\t"):
     nid, text, creation_date, task_id = note
     return Fore.YELLOW + indent + f"- {text} (id:{nid}) ({creation_date})" + Style.RESET_ALL
@@ -153,7 +205,7 @@ def search_tasks_and_notes(search_text):
         # Search in tasks (title column)
         tasks = conn.execute(
             """
-            SELECT id,title,status,creation_date,due_date,completion_date,recur 
+            SELECT id,title,status,creation_date,due_date,completion_date,recur,pid 
             FROM tasks 
             WHERE title LIKE ? 
             ORDER BY creation_date ASC,id ASC
@@ -199,7 +251,7 @@ def search_tasks_and_notes(search_text):
     if all_task_ids:
         with sqlite3.connect(DB_FILE) as conn:
             task_query = """
-                SELECT id,title,status,creation_date,due_date,completion_date,recur 
+                SELECT id,title,status,creation_date,due_date,completion_date,recur,pid 
                 FROM tasks 
                 WHERE id IN ({})
                 ORDER BY creation_date ASC,id ASC
@@ -234,17 +286,11 @@ def display_search_results(grouped):
     # Get all tasks and notes to properly display attached notes
     with sqlite3.connect(DB_FILE) as conn:
         all_tasks = conn.execute(
-            "SELECT id,title,status,creation_date,due_date,completion_date,recur FROM tasks ORDER BY creation_date ASC,id ASC"
+            "SELECT id,title,status,creation_date,due_date,completion_date,recur,pid FROM tasks ORDER BY creation_date ASC,id ASC"
         ).fetchall()
         all_notes = conn.execute(
             "SELECT id,text,creation_date,task_id FROM notes ORDER BY creation_date ASC,id ASC"
         ).fetchall()
-
-    # Create a mapping of task_id to list of notes for that task
-    task_notes = defaultdict(list)
-    for note in all_notes:
-        if note[3]:  # note[3] is task_id
-            task_notes[note[3]].append(note)
 
     for day in sorted(grouped.keys()):
         tasks_for_day = grouped[day]["tasks"]
@@ -254,14 +300,11 @@ def display_search_results(grouped):
             print()
             print(format_date_with_day(day))
             
-            # Display tasks
-            for task in tasks_for_day:
-                print("\t" + format_task(task))
-                # Show notes for this task
-                task_id = task[0]  # task[0] is task id
-                if task_id in task_notes:
-                    for note in task_notes[task_id]:
-                        print(format_note(note, indent="\t\t"))
+            # Build and print task tree for this day
+            if tasks_for_day:
+                root_tasks, children, task_dict = build_task_tree(tasks_for_day)
+                for root_task in root_tasks:
+                    print_task_tree(root_task, children, task_dict, indent_level=1)  # 1 for the "\t" prefix)
             
             # Display standalone notes
             for note in notes_for_day:
@@ -566,9 +609,9 @@ def unlink_notes(note1_id, note2_id):
 
 def show_journal():
     with sqlite3.connect(DB_FILE) as conn:
-        # get tasks
+        # get tasks with pid column
         tasks = conn.execute(
-            "SELECT id,title,status,creation_date,due_date,completion_date,recur FROM tasks ORDER BY creation_date ASC,id ASC"
+            "SELECT id,title,status,creation_date,due_date,completion_date,recur,pid FROM tasks ORDER BY creation_date ASC,id ASC"
         ).fetchall()
 
         # get notes
@@ -579,7 +622,7 @@ def show_journal():
     # group tasks/notes by creation_date
     grouped = defaultdict(lambda: {"tasks": [], "notes": []})
     for t in tasks:
-        grouped[t[3]]["tasks"].append(t)
+        grouped[t[3]]["tasks"].append(t)  # t[3] is creation_date
     for n in notes:
         if n[3]:  # attached to task
             # handled under task display
@@ -590,12 +633,14 @@ def show_journal():
     for day in sorted(grouped.keys()):
         print()
         print(format_date_with_day(day))
-        for task in grouped[day]["tasks"]:
-            print("\t" + format_task(task))
-            # show notes for this task
-            for n in notes:
-                if n[3] == task[0]:
-                    print(format_note(n, indent="\t\t"))
+        
+        # Build and print task tree for this day
+        day_tasks = grouped[day]["tasks"]
+        if day_tasks:
+            root_tasks, children, task_dict = build_task_tree(day_tasks)
+            for root_task in root_tasks:
+                print_task_tree(root_task, children, task_dict, indent_level=1)  # 1 for the "\t" prefix
+        
         # show standalone notes
         for n in grouped[day]["notes"]:
             if not n[3]:
@@ -604,7 +649,7 @@ def show_journal():
 def show_due():
     with sqlite3.connect(DB_FILE) as conn:
         tasks = conn.execute(
-            "SELECT id,title,status,creation_date,due_date,completion_date,recur FROM tasks WHERE status != 'done' ORDER BY due_date ASC"
+            "SELECT id,title,status,creation_date,due_date,completion_date,recur,pid FROM tasks WHERE status != 'done' ORDER BY due_date ASC"
         ).fetchall()
         
         # Get all notes for tasks that will be displayed
@@ -627,6 +672,7 @@ def show_due():
     else:
         end_of_month = today.replace(month=today.month + 1, day=1) - timedelta(days=1)
     
+    # Updated to include pid in bucketing
     buckets = {"Overdue": [], "Due Today": [], "Due Tomorrow": [], "This Week": [], "This Month": [], "Future": [], "No Due Date": []}
 
     for t in tasks:
@@ -652,18 +698,16 @@ def show_due():
     for label in ["Future", "This Month", "This Week", "Due Tomorrow", "Due Today", "Overdue", "No Due Date"]:
         if buckets[label]:
             print(f"\n{label}")
-            for t in buckets[label]:
-                print("\t" + format_task(t))
-                # Show notes for this task if any exist
-                task_id = t[0]  # t[0] is task id
-                if task_id in task_notes:
-                    for note in task_notes[task_id]:
-                        print(format_note(note, indent="\t\t"))  # 6 spaces for indentation
+            # Build and print task tree for this bucket
+            bucket_tasks = buckets[label]
+            root_tasks, children, task_dict = build_task_tree(bucket_tasks)
+            for root_task in root_tasks:
+                print_task_tree(root_task, children, task_dict, indent_level=1)  # 1 for the "\t" prefix
 
 def show_task():
     with sqlite3.connect(DB_FILE) as conn:
         tasks = conn.execute(
-            "SELECT id,title,status,creation_date,due_date,completion_date,recur FROM tasks WHERE status != 'done' ORDER BY creation_date ASC"
+            "SELECT id,title,status,creation_date,due_date,completion_date,recur,pid FROM tasks WHERE status != 'done' ORDER BY creation_date ASC"
         ).fetchall()
         
         # Get all notes for tasks that will be displayed
@@ -684,13 +728,12 @@ def show_task():
     for day in sorted(grouped.keys()):
         print()
         print(format_date_with_day(day))
-        for task in grouped[day]:
-            print("\t" + format_task(task))
-            # Show notes for this task if any exist
-            task_id = task[0]  # task[0] is task id
-            if task_id in task_notes:
-                for note in task_notes[task_id]:
-                    print(format_note(note, indent="\t\t"))  # 6 spaces for indentation
+        
+        # Build and print task tree for this day
+        day_tasks = grouped[day]
+        root_tasks, children, task_dict = build_task_tree(day_tasks)
+        for root_task in root_tasks:
+            print_task_tree(root_task, children, task_dict, indent_level=1)  # 1 for the "\t" prefix
 
 def show_note():
     with sqlite3.connect(DB_FILE) as conn:
@@ -783,7 +826,7 @@ def show_note_details(note_id):
 def show_completed_tasks():
     with sqlite3.connect(DB_FILE) as conn:
         tasks = conn.execute("""
-            SELECT id, title, status, creation_date, due_date, completion_date, recur
+            SELECT id, title, status, creation_date, due_date, completion_date, recur, pid
             FROM tasks 
             WHERE status = 'done' AND completion_date IS NOT NULL
             ORDER BY completion_date ASC, id ASC
@@ -802,11 +845,6 @@ def show_completed_tasks():
         else:
             notes = []
 
-    # Create a mapping of task_id to list of notes for that task
-    task_notes = defaultdict(list)
-    for note in notes:
-        task_notes[note[3]].append(note)  # note[3] is task_id
-    
     # Group tasks by completion date
     grouped = defaultdict(list)
     for t in tasks:
@@ -817,19 +855,18 @@ def show_completed_tasks():
     for completion_date in sorted(grouped.keys()):
         print()
         print(format_date_with_day(completion_date))
-        for task in grouped[completion_date]:
-            print("\t" + format_task(task))
-            # Show notes for this task if any exist
-            task_id = task[0]  # task[0] is task id
-            if task_id in task_notes:
-                for note in task_notes[task_id]:
-                    print(format_note(note, indent="\t\t"))  # 6 spaces for indentation
+        
+        # Build and print task tree for this completion date
+        date_tasks = grouped[completion_date]
+        root_tasks, children, task_dict = build_task_tree(date_tasks)
+        for root_task in root_tasks:
+            print_task_tree(root_task, children, task_dict, indent_level=1)  # 1 for the "\t" prefix
 
 
 def show_tasks_by_status():
     with sqlite3.connect(DB_FILE) as conn:
         tasks = conn.execute("""
-            SELECT id, title, status, creation_date, due_date, completion_date, recur
+            SELECT id, title, status, creation_date, due_date, completion_date, recur, pid
             FROM tasks 
             WHERE status != 'done'
             ORDER BY 
@@ -855,11 +892,6 @@ def show_tasks_by_status():
         else:
             notes = []
 
-    # Create a mapping of task_id to list of notes for that task
-    task_notes = defaultdict(list)
-    for note in notes:
-        task_notes[note[3]].append(note)  # note[3] is task_id
-
     # Group tasks by status
     grouped = defaultdict(list)
     for t in tasks:
@@ -872,13 +904,12 @@ def show_tasks_by_status():
     for status in status_order:
         if status in grouped and grouped[status]:
             print(f"\n{status_labels[status]}")
-            for task in grouped[status]:
-                print("\t" + format_task(task))
-                # Show notes for this task if any exist
-                task_id = task[0]  # task[0] is task id
-                if task_id in task_notes:
-                    for note in task_notes[task_id]:
-                        print(format_note(note, indent="\t\t"))  # 6 spaces for indentation
+            
+            # Build and print task tree for this status
+            status_tasks = grouped[status]
+            root_tasks, children, task_dict = build_task_tree(status_tasks)
+            for root_task in root_tasks:
+                print_task_tree(root_task, children, task_dict, indent_level=1)  # 1 for the "\t" prefix
 
 
 # --- CLI Parser ---
@@ -1086,25 +1117,41 @@ def main():
         if item_type == "note" and item_id is not None:
             show_note_details(item_id)
         elif item_type == "task" and item_id is not None:
-            # For showing a specific task, we'll need to implement this functionality
-            # First, find tasks by their ID
+            # For showing a specific task and its children
             with sqlite3.connect(DB_FILE) as conn:
                 task = conn.execute(
-                    "SELECT id,title,status,creation_date,due_date,completion_date,recur FROM tasks WHERE id=?", 
+                    "SELECT id,title,status,creation_date,due_date,completion_date,recur,pid FROM tasks WHERE id=?", 
                     (item_id,)
                 ).fetchone()
                 
             if task:
-                print(format_task(task))
-                # Also show any notes associated with this task
+                # Get all related tasks to build the tree
                 with sqlite3.connect(DB_FILE) as conn:
-                    notes = conn.execute(
-                        "SELECT id,text,creation_date,task_id FROM notes WHERE task_id=?", 
+                    all_related_tasks = conn.execute(
+                        """
+                        WITH RECURSIVE task_tree AS (
+                            -- Base case: the selected task
+                            SELECT id, title, status, creation_date, due_date, completion_date, recur, pid, 0 as level
+                            FROM tasks
+                            WHERE id = ?
+                            
+                            UNION ALL
+                            
+                            -- Recursive case: child tasks
+                            SELECT t.id, t.title, t.status, t.creation_date, t.due_date, t.completion_date, t.recur, t.pid, tt.level + 1
+                            FROM tasks t
+                            JOIN task_tree tt ON t.pid = tt.id
+                        )
+                        SELECT * FROM task_tree
+                        ORDER BY level, id;
+                        """, 
                         (item_id,)
                     ).fetchall()
-                    
-                for note in notes:
-                    print(format_note(note, indent="    "))
+                
+                # Build and print the tree for this specific task and its children
+                root_tasks, children, task_dict = build_task_tree(all_related_tasks)
+                if root_tasks:
+                    print_task_tree(root_tasks[0], children, task_dict, indent_level=0)  # No initial indent for top task
             else:
                 print(f"Error: Task with ID {item_id} not found")
         else:
