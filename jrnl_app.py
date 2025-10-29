@@ -1273,33 +1273,33 @@ def main():
     elif cmd == "f":
         print("Error: The 'jrnl f' command has been removed. Use 'jrnl find <text>' instead.")
     elif cmd in ["help", "h"]:
-        print("""jrnl - Command Line Journal and Task Manager
+        print("""j - Command Line Journal and Task Manager
 
 USAGE:
-    jrnl [command] [arguments...]
+    j [command] [arguments...]
 
 COMMANDS:
-    jrnl
+    j
         Show tasks grouped by due date (default view) (Overdue / Due Today / Due Tomorrow / This Week / This Month / Future / No Due Date)
-    jrnl new note <text> [-link <id>[,<id>,...]]
+    j new note <text> [-link <id>[,<id>,...]]
         Add a new note with optional links
-    jrnl new task <text> [-due @<YYYY-MM-DD|today|tomorrow|eow|eom|eoy>] [-recur <Nd|Nw|Nm|Ny>]
+    j new task <text> [-due @<YYYY-MM-DD|today|tomorrow|eow|eom|eoy>] [-recur <Nd|Nw|Nm|Ny>]
         Add a new task with optional due date and recurrence
-    jrnl edit note <id> [-text <text>] [-link <id>[,<id>,...]] [-unlink <id>[,<id>,...]]
+    j edit note <id> [-text <text>] [-link <id>[,<id>,...]] [-unlink <id>[,<id>,...]]
         Edit note with optional text, linking, unlinking
-    jrnl edit task <id> [-text <text>] [-due <text>] [-note <text>] [-recur <Nd|Nw|Nm|Ny>]
+    j edit task <id> [-text <text>] [-due <date>] [-note <text>] [-recur <pattern>]
         Edit task with optional parameters
-    jrnl rm <note|task> <id>[,<id>,...]
+    j rm <note|task> <id>[,<id>,...]
         Delete notes or tasks by ID
-    jrnl list <page|note|task> [due|status|done]
+    j list <page|note|task> [due|status|done]
         List items with optional grouping
-    jrnl show <note|task> <id>
+    j show <note|task> <id>
         Show specific note or task
-    jrnl <start|restart|waiting|done> task <id>[,<id>,...]
+    j <start|restart|waiting|done> task <id>[,<id>,...]
         Task status operations
-    jrnl find <text>
+    j find <text>
         Search for tasks and notes containing text (supports wildcards: * = any chars, ? = single char)
-    jrnl help|h
+    j help
         Show this help message
 """)
 
