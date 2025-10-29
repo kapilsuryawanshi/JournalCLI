@@ -31,12 +31,20 @@ def init_db():
             creation_date TEXT NOT NULL,
             due_date TEXT NOT NULL,
             completion_date TEXT,
-            recur TEXT
+            recur TEXT,
+            pid INTEGER
         )""")
         
         # Check if recur column exists, and add it if it doesn't
         try:
             conn.execute("ALTER TABLE tasks ADD COLUMN recur TEXT")
+        except sqlite3.OperationalError:
+            # Column already exists, which is fine
+            pass
+        
+        # Check if pid column exists, and add it if it doesn't
+        try:
+            conn.execute("ALTER TABLE tasks ADD COLUMN pid INTEGER")
         except sqlite3.OperationalError:
             # Column already exists, which is fine
             pass
