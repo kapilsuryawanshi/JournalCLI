@@ -239,27 +239,52 @@ def build_task_tree(tasks_list):
     
     return root_tasks, children, task_dict
 
-def print_task_tree(task, children, task_dict, indent_level=0):
+def print_task_tree(task, children, task_dict, is_last=True, prefix="", is_root=True):
     """
-    Recursively print a task and its children in a tree structure.
+    Recursively print a task and its children in a tree structure using ASCII characters.
     """
-    print(format_task(task, indent_level))
+    task_id = task[0]  # task[0] is id
     
-    # Print notes for this task if any exist
+    # For root tasks (at the very beginning), we don't use tree characters
+    if is_root:
+        prefix_str = "\t"  # Regular indent for root tasks
+        print(format_task(task, prefix_str))
+    else:
+        # For child tasks, use tree characters
+        if is_last:
+            prefix_str = prefix + "└─ "
+        else:
+            prefix_str = prefix + "├─ "
+        print(format_task(task, prefix_str))
+    
+    # For notes under this task, we need to determine the appropriate prefix
     with sqlite3.connect(DB_FILE) as conn:
         notes = conn.execute(
             "SELECT id,text,creation_date,task_id FROM notes WHERE task_id=?", 
             (task[0],)  # task[0] is id
         ).fetchall()
         
-    for note in notes:
-        print(format_note(note, indent="\t" + "    " * (indent_level + 1)))
+    # Determine note prefix based on whether this is the last child
+    if is_root:
+        note_prefix = "\t\t"
+    else:
+        note_prefix = prefix + ("    " if is_last else "│   ")
+        
+    for i, note in enumerate(notes):
+        is_last_note = (i == len(notes) - 1) and (task_id not in children or len(children[task_id]) == 0)
+        note_prefix_for_note = note_prefix + ("└─ " if is_last_note else "├─ ")
+        print(format_note(note, note_prefix_for_note))
     
-    # Recursively print children
-    task_id = task[0]  # task[0] is id
-    if task_id in children:
-        for child in children[task_id]:
-            print_task_tree(child, children, task_dict, indent_level + 1)
+    # Recursively print children with appropriate prefixes
+    if task_id in children and children[task_id]:
+        child_count = len(children[task_id])
+        for i, child in enumerate(children[task_id]):
+            is_last_child = (i == child_count - 1)
+            if is_root:
+                child_prefix = "\t"  # For root level, children will start with tab
+            else:
+                child_prefix = prefix + ("    " if is_last else "│   ")
+            print_task_tree(child, children, task_dict, is_last_child, child_prefix, is_root=False)
 
 def format_note(note, indent="\t"):
     nid, text, creation_date, task_id = note
