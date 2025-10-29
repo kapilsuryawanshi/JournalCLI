@@ -1300,6 +1300,8 @@ COMMANDS:
     j help
         Show this help message
 """)
+    else:
+        print(f"Error: Unknown command '{cmd}'. Use 'j help' to see available commands.")
 
 if __name__ == "__main__":
     main()
