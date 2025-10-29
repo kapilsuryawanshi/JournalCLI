@@ -178,11 +178,11 @@ Examples:
 
 **Search for content in tasks and notes**:
 ```
-j find <text>
+j search <text>
 ```
 Examples:
-- `j find "meeting"`
-- `j find "*important*"` (with wildcards)
+- `j search "meeting"`
+- `j search "*important*"` (with wildcards)
 
 ### Help
 
@@ -196,7 +196,7 @@ j help
 The search command allows you to find tasks and notes containing specific text:
 
 ```
-j find <text>
+j search <text>
 ```
 
 Wildcard characters supported:
@@ -204,9 +204,9 @@ Wildcard characters supported:
 - `?` - Matches any single character
 
 Examples:
-- `j find "*task*"` - Find items containing "task" anywhere in the text
-- `j find "task ????"` - Find items where "task" is followed by exactly 4 characters
-- `j find "task*done"` - Find items that contain "task" followed by "done" with anything in between
+- `j search "*task*"` - Find items containing "task" anywhere in the text
+- `j search "task ????"` - Find items where "task" is followed by exactly 4 characters
+- `j search "task*done"` - Find items that contain "task" followed by "done" with anything in between
 
 The search is case-insensitive and looks through both task titles and note texts.
 

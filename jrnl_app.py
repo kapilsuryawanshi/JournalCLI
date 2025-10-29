@@ -1263,7 +1263,7 @@ def main():
                 print("Error: Invalid task list option. Use 'due', 'status', or 'done'")
         else:
             print("Error: Invalid syntax. Use 'jrnl list <page|note|task>' or 'jrnl list task <due|status|done>'")
-    elif cmd == "find":
+    elif cmd in ["find", "search"]:
         if rest:
             search_text = " ".join(rest)
             grouped, tasks, notes = search_tasks_and_notes(search_text)
@@ -1271,7 +1271,7 @@ def main():
         else:
             print("Error: Please provide search text")
     elif cmd == "f":
-        print("Error: The 'jrnl f' command has been removed. Use 'jrnl find <text>' instead.")
+        print("Error: The 'jrnl f' command has been removed. Use 'jrnl search <text>' instead.")
     elif cmd in ["help", "h"]:
         print("""j - Command Line Journal and Task Manager
 
@@ -1297,7 +1297,7 @@ COMMANDS:
         Show specific note or task
     j <start|restart|waiting|done> task <id>[,<id>,...]
         Task status operations
-    j find <text>
+    j search <text>
         Search for tasks and notes containing text (supports wildcards: * = any chars, ? = single char)
     j help
         Show this help message
