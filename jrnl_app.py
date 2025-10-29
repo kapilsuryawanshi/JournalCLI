@@ -1283,7 +1283,7 @@ COMMANDS:
         Show tasks grouped by due date (default view) (Overdue / Due Today / Due Tomorrow / This Week / This Month / Future / No Due Date)
     j new note <text> [-link <id>[,<id>,...]]
         Add a new note with optional links
-    j new task <text> [-due @<YYYY-MM-DD|today|tomorrow|eow|eom|eoy>] [-recur <Nd|Nw|Nm|Ny>]
+    j new task <text> [-due <YYYY-MM-DD|today|tomorrow|eow|eom|eoy>] [-recur <Nd|Nw|Nm|Ny>]
         Add a new task with optional due date and recurrence
     j edit note <id> [-text <text>] [-link <id>[,<id>,...]] [-unlink <id>[,<id>,...]]
         Edit note with optional text, linking, unlinking

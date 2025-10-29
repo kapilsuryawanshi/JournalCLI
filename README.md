@@ -101,12 +101,12 @@ j show task <id>
 
 **Create tasks**:
 ```
-j new task <text> [-due @<YYYY-MM-DD|keyword>] [-recur <Nd|Nw|Nm|Ny>]
+j new task <text> [-due <YYYY-MM-DD|keyword>] [-recur <Nd|Nw|Nm|Ny>]
 ```
 Examples:
 - `j new task "Buy groceries"`
-- `j new task "Meeting with team" -due @tomorrow`
-- `j new task "Weekly report" -due @eow -recur 1w`
+- `j new task "Meeting with team" -due tomorrow`
+- `j new task "Weekly report" -due eow -recur 1w`
 
 Due date keywords: `today`, `tomorrow`, `eow` (end of week), `eom` (end of month), `eoy` (end of year), day names (monday, tuesday, etc.)
 
@@ -150,7 +150,7 @@ j edit task <id> [-text <text>] [-due <date>] [-note <note text>] [-recur <patte
 ```
 Examples:
 - `j edit task 1 -text "Updated task title"`
-- `j edit task 1 -due @tomorrow`
+- `j edit task 1 -due tomorrow`
 - `j edit task 1 -recur 2w`
 
 **Edit note**:
@@ -215,7 +215,7 @@ The search is case-insensitive and looks through both task titles and note texts
 `j` supports recurring tasks that automatically create new tasks when completed:
 
 ```
-j new task "Take out trash" -due @friday -recur 1w
+j new task "Take out trash" -due friday -recur 1w
 ```
 
 This creates a task that recurs weekly. When marked as done, it will automatically create a new instance with the next due date calculated based on the recurrence pattern.
