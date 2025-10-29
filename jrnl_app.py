@@ -946,16 +946,24 @@ def main():
             else:
                 print("Error: Please provide note text")
         
-        elif sub_cmd == "task":  # Handle "jrnl new task <text> [-due @<YYYY-MM-DD|today|tomorrow|eow|eom|eoy>] [-recur <Nd|Nw|Nm|Ny>]"
+        elif sub_cmd == "task":  # Handle "jrnl new task [@<pid>] <text> [-due <YYYY-MM-DD|today|tomorrow|eow|eom|eoy>] [-recur <Nd|Nw|Nm|Ny>]"
+            # Check if the first argument is a parent task ID in the format @<number>
+            parent_id = None
+            start_idx = 0
+            
+            if cmd_args and cmd_args[0].startswith("@") and cmd_args[0][1:].isdigit():
+                parent_id = int(cmd_args[0][1:])  # Remove @ and convert to int
+                start_idx = 1  # Skip the first argument as it's the parent ID
+            
             # Find the task text (everything before the first option flag)
             task_text = []
             due_date = None
             recur_pattern = None
-            i = 0
+            i = start_idx
             while i < len(cmd_args):
                 if cmd_args[i].startswith("-"):
                     if cmd_args[i] == "-due" and i + 1 < len(cmd_args):
-                        due_kw = cmd_args[i + 1].lstrip("@")  # Remove @ prefix if present
+                        due_kw = cmd_args[i + 1]  # No need to remove @ as it's handled separately now
                         due_date = parse_due(due_kw)
                         i += 2
                     elif cmd_args[i] == "-recur" and i + 1 < len(cmd_args):
@@ -978,14 +986,22 @@ def main():
             
             text = " ".join(task_text)
             if text:
+                # Check if parent_id exists if provided
+                if parent_id is not None:
+                    with sqlite3.connect(DB_FILE) as conn:
+                        cursor = conn.execute("SELECT id FROM tasks WHERE id = ?", (parent_id,))
+                        if not cursor.fetchone():
+                            print(f"Error: Parent task with ID {parent_id} does not exist")
+                            return
+                
                 # Add the task with due date if specified
                 if due_date:
                     # Create a temporary task with due date
                     today = datetime.now().date().strftime("%Y-%m-%d")
                     with sqlite3.connect(DB_FILE) as conn:
                         task_id = conn.execute(
-                            "INSERT INTO tasks (title,status,creation_date,due_date,recur) VALUES (?,?,?,?,?)",
-                            (text, "todo", today, due_date.strftime("%Y-%m-%d"), recur_pattern)
+                            "INSERT INTO tasks (title,status,creation_date,due_date,recur,pid) VALUES (?,?,?,?,?,?)",
+                            (text, "todo", today, due_date.strftime("%Y-%m-%d"), recur_pattern, parent_id)
                         ).lastrowid
                         print(f"Added 1 task(s)")
                 else:
@@ -996,13 +1012,19 @@ def main():
                         formatted_today = today.strftime("%Y-%m-%d")
                         with sqlite3.connect(DB_FILE) as conn:
                             task_id = conn.execute(
-                                "INSERT INTO tasks (title,status,creation_date,due_date,recur) VALUES (?,?,?,?,?)",
-                                (text, "todo", formatted_today, formatted_today, recur_pattern)
+                                "INSERT INTO tasks (title,status,creation_date,due_date,recur,pid) VALUES (?,?,?,?,?,?)",
+                                (text, "todo", formatted_today, formatted_today, recur_pattern, parent_id)
                             ).lastrowid
                         print(f"Added 1 task(s)")
                     else:
-                        # Call original add_task function for simple tasks
-                        add_task([text])
+                        # Call original add_task function for simple tasks but with parent ID
+                        today = datetime.now().date().strftime("%Y-%m-%d")
+                        with sqlite3.connect(DB_FILE) as conn:
+                            conn.execute(
+                                "INSERT INTO tasks (title,status,creation_date,due_date,pid) VALUES (?,?,?,?,?)",
+                                (text, "todo", today, today, parent_id)
+                            )
+                        print(f"Added 1 task(s)")
             else:
                 print("Error: Please provide task text")
     
@@ -1289,8 +1311,8 @@ COMMANDS:
         Show tasks grouped by due date (default view) (Overdue / Due Today / Due Tomorrow / This Week / This Month / Future / No Due Date)
     j new note <text> [-link <id>[,<id>,...]]
         Add a new note with optional links
-    j new task <text> [-due <YYYY-MM-DD|today|tomorrow|eow|eom|eoy>] [-recur <Nd|Nw|Nm|Ny>]
-        Add a new task with optional due date and recurrence
+    j new task [@<pid>] <text> [-due <YYYY-MM-DD|today|tomorrow|eow|eom|eoy>] [-recur <Nd|Nw|Nm|Ny>]
+        Add a new task with optional parent task, due date and recurrence
     j edit note <id> [-text <text>] [-link <id>[,<id>,...]] [-unlink <id>[,<id>,...]]
         Edit note with optional text, linking, unlinking
     j edit task <id> [-text <text>] [-due <date>] [-note <text>] [-recur <pattern>]

@@ -101,11 +101,11 @@ j show task <id>
 
 **Create tasks**:
 ```
-j new task <text> [-due <YYYY-MM-DD|keyword>] [-recur <Nd|Nw|Nm|Ny>]
+j new task [@<pid>] <text> [-due <YYYY-MM-DD|keyword>] [-recur <Nd|Nw|Nm|Ny>]
 ```
 Examples:
 - `j new task "Buy groceries"`
-- `j new task "Meeting with team" -due tomorrow`
+- `j new task @123 "Meeting with team" -due tomorrow`
 - `j new task "Weekly report" -due eow -recur 1w`
 
 Due date keywords: `today`, `tomorrow`, `eow` (end of week), `eom` (end of month), `eoy` (end of year), day names (monday, tuesday, etc.)
