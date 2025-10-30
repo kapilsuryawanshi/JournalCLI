@@ -1283,19 +1283,19 @@ def main():
                         """
                         WITH RECURSIVE task_tree AS (
                             -- Base case: the selected task
-                            SELECT id, title, status, creation_date, due_date, completion_date, recur, pid, 0 as level
+                            SELECT id, title, status, creation_date, due_date, completion_date, recur, pid
                             FROM tasks
                             WHERE id = ?
                             
                             UNION ALL
                             
                             -- Recursive case: child tasks
-                            SELECT t.id, t.title, t.status, t.creation_date, t.due_date, t.completion_date, t.recur, t.pid, tt.level + 1
+                            SELECT t.id, t.title, t.status, t.creation_date, t.due_date, t.completion_date, t.recur, t.pid
                             FROM tasks t
                             JOIN task_tree tt ON t.pid = tt.id
                         )
                         SELECT * FROM task_tree
-                        ORDER BY level, id;
+                        ORDER BY id;
                         """, 
                         (item_id,)
                     ).fetchall()
