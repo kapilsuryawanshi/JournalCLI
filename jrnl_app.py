@@ -252,9 +252,9 @@ def print_task_tree(task, children, task_dict, is_last=True, prefix="", is_root=
     else:
         # For child tasks, use tree characters
         if is_last:
-            prefix_str = prefix + "└─ "
+            prefix_str = prefix + " └─ "
         else:
-            prefix_str = prefix + "├─ "
+            prefix_str = prefix + " ├─ "
         print(format_task(task, prefix_str))
     
     # For notes under this task, we need to determine the appropriate prefix
@@ -266,7 +266,7 @@ def print_task_tree(task, children, task_dict, is_last=True, prefix="", is_root=
         
     # Determine note prefix based on whether this is the last child
     if is_root:
-        note_prefix = "\t\t"
+        note_prefix = "\t    "
     else:
         note_prefix = prefix + ("    " if is_last else "│   ")
         
@@ -283,7 +283,7 @@ def print_task_tree(task, children, task_dict, is_last=True, prefix="", is_root=
             if is_root:
                 child_prefix = "\t"  # For root level, children will start with tab
             else:
-                child_prefix = prefix + ("    " if is_last else "│   ")
+                child_prefix = prefix + ("    " if is_last else " │  ")
             print_task_tree(child, children, task_dict, is_last_child, child_prefix, is_root=False)
 
 def format_note(note, indent="\t"):
@@ -607,18 +607,39 @@ def edit_note(note_id, new_text):
         return True
 
 def delete_task(task_ids):
-    """Delete tasks from the database"""
+    """Delete tasks from the database along with their child tasks recursively"""
     deleted_count = 0
+    
+    # Get all tasks that need to be deleted (including children)
+    all_tasks_to_delete = set(task_ids)
+    
     with sqlite3.connect(DB_FILE) as conn:
-        for tid in task_ids:
-            # First delete associated notes
+        # Find all child tasks recursively using a loop
+        current_tasks = list(task_ids)
+        while current_tasks:
+            # Get children of current tasks
+            placeholders = ",".join("?" * len(current_tasks))
+            children = conn.execute(
+                f"SELECT id FROM tasks WHERE pid IN ({placeholders})",
+                current_tasks
+            ).fetchall()
+            
+            # Add children to the deletion list
+            current_tasks = [child[0] for child in children]
+            all_tasks_to_delete.update(current_tasks)
+    
+    # Now delete all tasks and their associated notes
+    with sqlite3.connect(DB_FILE) as conn:
+        for tid in all_tasks_to_delete:
+            # Delete associated notes
             conn.execute("DELETE FROM notes WHERE task_id=?", (tid,))
-            # Then delete the task
+            # Delete the task
             cursor = conn.execute("DELETE FROM tasks WHERE id=?", (tid,))
             if cursor.rowcount > 0:
                 deleted_count += 1
+    
     if deleted_count > 0:
-        print(f"Deleted {deleted_count} task(s)")
+        print(f"Deleted {deleted_count} task(s) (including children)")
     else:
         print("No tasks were deleted")
 
