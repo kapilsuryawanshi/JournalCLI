@@ -1260,17 +1260,14 @@ def main():
         elif cmd == "waiting":
             update_task_status(ids, "waiting")
     elif cmd == "done" and len(rest) >= 2 and rest[0] == "task":
-        # New consolidated command: jrnl done task <id>[,<id>,...] <note text>
+        # New consolidated command: jrnl done task <id>[,<id>,...] [note text]
         ids_str = rest[1]
         ids = [int(id_str) for id_str in ids_str.split(",") if id_str.isdigit()]
         
-        # Everything after the task IDs is considered note text
-        note_text = " ".join(rest[2:])
+        # Everything after the task IDs is considered note text (optional)
+        note_text = " ".join(rest[2:]) if len(rest) > 2 else ""
         if not ids:
-            print("Error: Please provide valid task IDs and note text")
-            return
-        if not note_text:
-            print("Error: Please provide a note for completing the task(s)")
+            print("Error: Please provide valid task IDs")
             return
         
         update_task_status(ids, "done", note_text)
@@ -1537,6 +1534,8 @@ COMMANDS:
         Show specific note or task
     j <start|restart|waiting|done> task <id>[,<id>,...]
         Task status operations
+    j done task <id>[,<id>,...] [note text]
+        Mark task(s) as done with optional note
     j search <text>
         Search for tasks and notes containing text (supports wildcards: * = any chars, ? = single char)
     j help

@@ -139,10 +139,10 @@ j waiting task <id>[,<id>...]
 
 **Mark tasks as done**:
 ```
-j done task <id>[,<id>...] <note text>
+j done task <id>[,<id>...] [note text]
 ```
 
-Supports the same due date keywords as task creation.
+Supports the same due date keywords as task creation. Note text is optional.
 
 **Edit task**:
 ```
