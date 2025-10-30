@@ -550,21 +550,22 @@ def update_task_status(task_ids, status, note_text=None):
     elif status == "done" and task_ids:
         print(f"No tasks were updated to done (likely due to incomplete child tasks)")
 
-def calculate_next_due_date(current_due_date, recur_pattern):
-    """Calculate the next due date based on the recur pattern"""
+def calculate_next_due_date(completion_date, recur_pattern):
+    """Calculate the next due date based on the recur pattern from the completion date"""
     try:
         # Parse the recur pattern (e.g., "4w", "2d", "1m", "1y")
         if not recur_pattern or len(recur_pattern) < 2:
-            return current_due_date
+            return completion_date
             
         number = int(recur_pattern[:-1])
         unit = recur_pattern[-1].lower()
         
         # Validate number range
         if number < 1 or number > 31:
-            return current_due_date
+            return completion_date
         
-        current_date = datetime.strptime(current_due_date, "%Y-%m-%d").date()
+        # Parse the completion date
+        current_date = datetime.strptime(completion_date, "%Y-%m-%d").date()
         
         if unit == 'd':  # days
             new_date = current_date + timedelta(days=number)
@@ -581,11 +582,11 @@ def calculate_next_due_date(current_due_date, recur_pattern):
         elif unit == 'y':  # years
             new_date = current_date.replace(year=current_date.year + number)
         else:
-            return current_due_date
+            return completion_date
             
         return new_date.strftime("%Y-%m-%d")
     except:
-        return current_due_date
+        return completion_date
 
 def set_task_recur(task_ids, recur_pattern):
     """Set the recur pattern for tasks"""
