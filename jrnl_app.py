@@ -472,20 +472,36 @@ def update_task_status(task_ids, status, note_text=None):
             if status == "done":
                 # Get the task's recur pattern
                 task = conn.execute(
-                    "SELECT title, due_date, recur FROM tasks WHERE id=?", (tid,)
+                    "SELECT id, title, due_date, recur FROM tasks WHERE id=?", (tid,)
                 ).fetchone()
                 today = datetime.now().date().strftime("%Y-%m-%d")                
-                if task and task[2]:  # If task has a recur pattern
+                if task and task[3]:  # If task has a recur pattern (task[3] is recur)
                     # Create a new task with the same details but new due date
 
-                    title, due_date, recur = task
+                    old_task_id, title, due_date, recur = task
                     new_due_date = calculate_next_due_date(today, recur)
                     
-                    conn.execute(
+                    # Insert the new recurring parent task
+                    new_parent_id = conn.execute(
                         "INSERT INTO tasks (title,status,creation_date,due_date,recur) VALUES (?,?,?,?,?)",
                         (title, "todo", today, new_due_date, recur)
-                    )
+                    ).lastrowid
                     print(f"Created recurring task for '{title}'")
+                    
+                    # Recreate child tasks for the new parent task
+                    child_tasks = conn.execute(
+                        "SELECT title, status, creation_date, due_date, completion_date, recur FROM tasks WHERE pid = ?",
+                        (old_task_id,)
+                    ).fetchall()
+                    
+                    for child_task in child_tasks:
+                        child_title, child_status, child_creation_date, child_due_date, child_completion_date, child_recur = child_task
+                        # Insert the child task with the new parent ID
+                        conn.execute(
+                            "INSERT INTO tasks (title, status, creation_date, due_date, completion_date, recur, pid) VALUES (?,?,?,?,?,?,?)",
+                            (child_title, child_status, today, child_due_date, child_completion_date, child_recur, new_parent_id)
+                        )
+                    print(f"  Recreated {len(child_tasks)} child task(s) for the recurring task")
                 
                 # Set completion date for the original task
                 conn.execute(
