@@ -288,7 +288,7 @@ def print_task_tree(task, children, task_dict, is_last=True, prefix="", is_root=
 
 def format_note(note, indent="\t"):
     nid, text, creation_date, task_id = note
-    return Fore.YELLOW + indent + f"- {text} (id:{nid}) ({creation_date})" + Style.RESET_ALL
+    return Fore.YELLOW + indent + f"{text} (id:{nid}) ({creation_date})" + Style.RESET_ALL
 
 def search_tasks_and_notes(search_text):
     """Search for tasks and notes containing the search text (supports wildcards: * and ?)"""
