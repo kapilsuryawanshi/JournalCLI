@@ -457,6 +457,17 @@ def update_task_status(task_ids, status, note_text=None):
     updated_count = 0
     with sqlite3.connect(DB_FILE) as conn:
         for tid in task_ids:
+            # Check if trying to mark a parent task as done when children are not completed
+            if status == "done":
+                # Check if this task has any children that are not done
+                children = conn.execute(
+                    "SELECT id, status FROM tasks WHERE pid = ? AND status != 'done'", (tid,)
+                ).fetchall()
+                
+                if children:
+                    print(f"Error: Cannot mark task {tid} as done because it has {len(children)} incomplete child task(s)")
+                    continue  # Skip updating this task
+            
             # If marking as done, check if it's a recurring task
             if status == "done":
                 # Get the task's recur pattern
@@ -505,6 +516,8 @@ def update_task_status(task_ids, status, note_text=None):
     if updated_count > 0:
         status_display = "undone" if status == "todo" else status
         print(f"Updated {updated_count} task(s) to {status_display}")
+    elif status == "done" and task_ids:
+        print(f"No tasks were updated to done (likely due to incomplete child tasks)")
 
 def calculate_next_due_date(current_due_date, recur_pattern):
     """Calculate the next due date based on the recur pattern"""
