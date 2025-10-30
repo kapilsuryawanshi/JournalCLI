@@ -489,7 +489,7 @@ def update_task_status(task_ids, status, note_text=None):
                     print(f"Created recurring task for '{title}'")
                     
                     # Recursively recreate the entire child task structure
-                    def recreate_task_hierarchy(old_parent_id, new_parent_id, level=0):
+                    def recreate_task_hierarchy(old_parent_id, new_parent_id, parent_due_date):
                         # Get direct children of the current parent
                         child_tasks = conn.execute(
                             "SELECT id, title, status, creation_date, due_date, completion_date, recur FROM tasks WHERE pid = ?",
@@ -500,19 +500,20 @@ def update_task_status(task_ids, status, note_text=None):
                         for child_task in child_tasks:
                             child_id, child_title, child_status, child_creation_date, child_due_date, child_completion_date, child_recur = child_task
                             
-                            # Insert the child task with the new parent ID
+                            # Reset status to 'todo' and update due date to match parent's new due date
+                            # Keep completion_date as NULL since it's a new task instance
                             new_child_id = conn.execute(
                                 "INSERT INTO tasks (title, status, creation_date, due_date, completion_date, recur, pid) VALUES (?,?,?,?,?,?,?)",
-                                (child_title, child_status, today, child_due_date, child_completion_date, child_recur, new_parent_id)
+                                (child_title, "todo", today, parent_due_date, None, child_recur, new_parent_id)
                             ).lastrowid
                             
                             # Recursively recreate grandchildren and deeper levels
-                            grandchildren_count = recreate_task_hierarchy(child_id, new_child_id, level + 1)
+                            grandchildren_count = recreate_task_hierarchy(child_id, new_child_id, parent_due_date)
                             count += 1 + grandchildren_count
                             
                         return count
                     
-                    total_recreated = recreate_task_hierarchy(old_task_id, new_parent_id)
+                    total_recreated = recreate_task_hierarchy(old_task_id, new_parent_id, new_due_date)
                     if total_recreated > 0:
                         print(f"  Recreated {total_recreated} child task(s) for the recurring task (including all subtasks)")
                 
