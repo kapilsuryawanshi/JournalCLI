@@ -488,20 +488,33 @@ def update_task_status(task_ids, status, note_text=None):
                     ).lastrowid
                     print(f"Created recurring task for '{title}'")
                     
-                    # Recreate child tasks for the new parent task
-                    child_tasks = conn.execute(
-                        "SELECT title, status, creation_date, due_date, completion_date, recur FROM tasks WHERE pid = ?",
-                        (old_task_id,)
-                    ).fetchall()
+                    # Recursively recreate the entire child task structure
+                    def recreate_task_hierarchy(old_parent_id, new_parent_id, level=0):
+                        # Get direct children of the current parent
+                        child_tasks = conn.execute(
+                            "SELECT id, title, status, creation_date, due_date, completion_date, recur FROM tasks WHERE pid = ?",
+                            (old_parent_id,)
+                        ).fetchall()
+                        
+                        count = 0
+                        for child_task in child_tasks:
+                            child_id, child_title, child_status, child_creation_date, child_due_date, child_completion_date, child_recur = child_task
+                            
+                            # Insert the child task with the new parent ID
+                            new_child_id = conn.execute(
+                                "INSERT INTO tasks (title, status, creation_date, due_date, completion_date, recur, pid) VALUES (?,?,?,?,?,?,?)",
+                                (child_title, child_status, today, child_due_date, child_completion_date, child_recur, new_parent_id)
+                            ).lastrowid
+                            
+                            # Recursively recreate grandchildren and deeper levels
+                            grandchildren_count = recreate_task_hierarchy(child_id, new_child_id, level + 1)
+                            count += 1 + grandchildren_count
+                            
+                        return count
                     
-                    for child_task in child_tasks:
-                        child_title, child_status, child_creation_date, child_due_date, child_completion_date, child_recur = child_task
-                        # Insert the child task with the new parent ID
-                        conn.execute(
-                            "INSERT INTO tasks (title, status, creation_date, due_date, completion_date, recur, pid) VALUES (?,?,?,?,?,?,?)",
-                            (child_title, child_status, today, child_due_date, child_completion_date, child_recur, new_parent_id)
-                        )
-                    print(f"  Recreated {len(child_tasks)} child task(s) for the recurring task")
+                    total_recreated = recreate_task_hierarchy(old_task_id, new_parent_id)
+                    if total_recreated > 0:
+                        print(f"  Recreated {total_recreated} child task(s) for the recurring task (including all subtasks)")
                 
                 # Set completion date for the original task
                 conn.execute(
