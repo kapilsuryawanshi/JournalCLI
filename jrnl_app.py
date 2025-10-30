@@ -1132,7 +1132,7 @@ def main():
         sub_cmd = rest[0]  # "note" or "task"
         cmd_args = rest[1:]
         
-        if sub_cmd == "note":  # Handle "jrnl new note <text> [-link <id>[,<id>,...]]"
+        if sub_cmd == "note":  # Handle "j new note <text> [-link <id>[,<id>,...]]"
             # Find the note text (everything before the first option flag)
             note_text = []
             link_ids = []
@@ -1174,7 +1174,7 @@ def main():
             else:
                 print("Error: Please provide note text")
         
-        elif sub_cmd == "task":  # Handle "jrnl new task [@<pid>] <text> [-due <YYYY-MM-DD|today|tomorrow|eow|eom|eoy>] [-recur <Nd|Nw|Nm|Ny>]"
+        elif sub_cmd == "task":  # Handle "j new task [@<pid>] <text> [-due <YYYY-MM-DD|today|tomorrow|eow|eom|eoy>] [-recur <Nd|Nw|Nm|Ny>]"
             # Check if the first argument is a parent task ID in the format @<number>
             parent_id = None
             start_idx = 0
@@ -1191,7 +1191,10 @@ def main():
             while i < len(cmd_args):
                 if cmd_args[i].startswith("-"):
                     if cmd_args[i] == "-due" and i + 1 < len(cmd_args):
-                        due_kw = cmd_args[i + 1]  # No need to remove @ as it's handled separately now
+                        due_kw = cmd_args[i + 1]
+                        # Remove @ symbol if present (for due dates like @tomorrow, @2025-12-25)
+                        if due_kw.startswith("@"):
+                            due_kw = due_kw[1:]
                         due_date = parse_due(due_kw)
                         i += 2
                     elif cmd_args[i] == "-recur" and i + 1 < len(cmd_args):
@@ -1257,31 +1260,24 @@ def main():
                 print("Error: Please provide task text")
     
     elif cmd in ["page", "p"]:
-        # The old 'jrnl page|p' command has been removed
-        print("Error: The 'jrnl page|p' command has been removed. Use 'jrnl list page' instead.")
+        # The old 'j page|p' command has been removed
+        print("Command 'j page|p' has been removed. Use 'j help' to see available commands.")
     elif cmd in ["task", "t"] and rest:  # Handle task commands
-        # The old task command (jrnl task <text>) has been removed
-        print("Error: The 'jrnl task <text>' command has been removed. Use 'jrnl new task <text> [-due @<date>] [-recur <Nd|Nw|Nm|Ny>]' instead.")
+        # The old task command (j task <text>) has been removed
+        print("Command 'j task <text>' has been removed. Use 'j help' to see available commands.")
     elif cmd in ["note", "n"] and rest:  # Handle note commands with arguments
         # Check if first argument is a single digit/number (for note lookup)
         if len(rest) == 1 and rest[0].isdigit():
-            # The old note command (jrnl note <id>) has been removed
-            print("Error: The 'jrnl note <id>' command has been removed. Use 'jrnl show note <id>' instead.")
+            # The old note command (j note <id>) has been removed
+            print("Command 'j note <id>' has been removed. Use 'j help' to see available commands.")
         else:
-            # The old note command (jrnl note <text>) and edit command (jrnl note <id> edit) have been removed
-            print("Error: The 'jrnl note <text>' and 'jrnl note <id> edit' commands have been removed. Use 'jrnl new note <text> [-link <id>[,<id>,...]]' for new notes or 'jrnl edit note <id> [-text <text>] [-link <id>[,<id>,...]] [-unlink <id>[,<id>,...]]' for editing.")
+            # The old note command (j note <text>) and edit command (j note <id> edit) have been removed
+            print("Commands 'j note <text>' and 'j note <id> edit' have been removed. Use 'j help' to see available commands.")
     elif cmd == "view" and len(rest) >= 2:
-        # New consolidated command: jrnl view task <due|status|done>
-        if rest[0] == "task" and rest[1] == "due":
-            show_due()
-        elif rest[0] == "task" and rest[1] == "status":
-            show_tasks_by_status()
-        elif rest[0] == "task" and rest[1] == "done":
-            show_completed_tasks()
-        else:
-            print("Error: Invalid syntax. Use 'jrnl view task <due|status|done>'")
+        # New consolidated command: j view task <due|status|done>
+        print("Command 'j view' has been removed. Use 'j help' to see available commands.")
     elif cmd in ["start", "restart", "waiting"] and len(rest) >= 2 and rest[0] == "task":
-        # New consolidated command: jrnl <start|restart|waiting> task <id>[,<id>,...]
+        # New consolidated command: j <start|restart|waiting> task <id>[,<id>,...]
         ids_str = rest[1]
         ids = [int(id_str) for id_str in ids_str.split(",") if id_str.isdigit()]
         
@@ -1292,7 +1288,7 @@ def main():
         elif cmd == "waiting":
             update_task_status(ids, "waiting")
     elif cmd == "done" and len(rest) >= 2 and rest[0] == "task":
-        # New consolidated command: jrnl done task <id>[,<id>,...] [note text]
+        # New consolidated command: j done task <id>[,<id>,...] [note text]
         ids_str = rest[1]
         ids = [int(id_str) for id_str in ids_str.split(",") if id_str.isdigit()]
         
@@ -1304,7 +1300,7 @@ def main():
         
         update_task_status(ids, "done", note_text)
     elif cmd == "show" and len(rest) >= 2 and rest[0] in ["note", "task"]:
-        # New consolidated command: jrnl show <note|task> <id>
+        # New consolidated command: j show <note|task> <id>
         item_type = rest[0]
         item_id = int(rest[1]) if rest[1].isdigit() else None
         
@@ -1349,20 +1345,20 @@ def main():
             else:
                 print(f"Error: Task with ID {item_id} not found")
         else:
-            print("Error: Invalid syntax. Use 'jrnl show <note|task> <id>'")
+            print("Error: Invalid syntax. Use 'j show <note|task> <id>'")
     elif cmd in ["task", "t"]:
-        # The old 'jrnl task' command has been removed
-        print("Error: The 'jrnl task' command has been removed. Use 'jrnl list task status' instead.")
+        # The old 'j task' command has been removed
+        print("Command 'j task' has been removed. Use 'j help' to see available commands.")
     elif cmd in ["note", "n"]:
-        # The old 'jrnl note' command has been removed
-        print("Error: The 'jrnl note' command has been removed. Use 'jrnl list note' instead.")
+        # The old 'j note' command has been removed
+        print("Command 'j note' has been removed. Use 'j help' to see available commands.")
     elif cmd == "edit" and len(rest) >= 2:
-        # New consolidated edit syntax: jrnl edit <note|task> <id> [options]
+        # New consolidated edit syntax: j edit <note|task> <id> [options]
         item_type = rest[0].lower()
         item_id = int(rest[1]) if rest[1].isdigit() else None
         
         if item_type not in ["note", "task"] or item_id is None:
-            print("Error: Invalid syntax. Use 'jrnl edit note <id> [options]' or 'jrnl edit task <id> [options]'")
+            print("Error: Invalid syntax. Use 'j edit note <id> [options]' or 'j edit task <id> [options]'")
             return
         
         # Parse options
@@ -1456,26 +1452,14 @@ def main():
             
             # Check if the identifier starts with 't' (task)
             if item_identifier.startswith("t") and item_identifier[1:].isdigit():
-                print("Error: The 'edit' command for tasks has been removed. Use 'jrnl task <id> edit -text <new text>' instead.")
+                print("Command 'j task <id> edit' has been removed. Use 'j help' to see available commands.")
             else:
-                print("Error: The 'edit' command has been removed for tasks. For task editing, use 'jrnl task <id> edit -text <new text>'. For note editing, use 'jrnl note <id> edit text:<new text>'.")
+                print("Command 'j note <id> edit' has been removed. Use 'j help' to see available commands.")
         else:
-            print("Error: Please use the consolidated commands: 'jrnl task <id> edit' or 'jrnl note <id> edit'")
-    elif cmd == "edit":
-        if rest and len(rest) >= 2:
-            item_identifier = rest[0]
-            new_text = " ".join(rest[1:])
-            
-            # Check if the identifier starts with 't' (task)
-            if item_identifier.startswith("t") and item_identifier[1:].isdigit():
-                print("Error: The 'edit' command for tasks has been removed. Use 'jrnl edit task <id> [-text <text>] [-due <text>] [-note <text>] [-recur <Nd|Nw|Nm|Ny>]' instead.")
-            else:
-                print("Error: The 'edit' command has been removed for tasks. For task editing, use 'jrnl edit task <id> [-text <text>] [-due <text>] [-note <text>] [-recur <Nd|Nw|Nm|Ny>]'. For note editing, use 'jrnl edit note <id> [-text <text>] [-link <id>[,<id>,...]] [-unlink <id>[,<id>,...]]'.")
-        else:
-            print("Error: Please use the consolidated commands: 'jrnl edit task <id> [options]' or 'jrnl edit note <id> [options]'")
+            print("Command 'j edit' has been removed. Use 'j help' to see available commands.")
     elif cmd == "rm":
         if rest and len(rest) >= 2:
-            # Consolidated syntax: jrnl rm <note|task> <id>[,<id>,...]
+            # Consolidated syntax: j rm <note|task> <id>[,<id>,...]
             item_type = rest[0].lower()
             ids_str = rest[1]
             ids = [int(id_str) for id_str in ids_str.split(",") if id_str.isdigit()]
@@ -1488,34 +1472,34 @@ def main():
                 print("Error: Invalid item type. Use 'note' or 'task'")
                 return
         else:
-            print("Error: Please use the consolidated command: 'jrnl rm <note|task> <id>[,<id>,...]'. The old syntax 'jrnl rm t<id>[,n<id>...] has been removed.'")
+            print("Old syntax 'j rm t<id>[,n<id>...] has been removed. Use 'j help' to see available commands.")
     elif cmd in ["task", "t"]:
         show_task()
     elif cmd in ["note", "n"]:
         show_note()
     elif cmd == "done" and not rest:  # Only if no additional arguments (to distinguish from 'done' status command)
         # The old done command has been removed
-        print("Error: The 'jrnl done' command has been removed. Use 'jrnl list task done' instead.")
+        print("Command 'j done' has been removed. Use 'j help' to see available commands.")
     elif cmd in ["done", "x"] and rest:
         # The old done command has been removed
-        print("Error: The 'jrnl done <id> <note>' command has been removed. Use 'jrnl done task <id>[,<id>...] <note text>' instead.")
+        print("Command 'j done <id> <note>' has been removed. Use 'j help' to see available commands.")
     elif cmd in ["status", "s"]:
         # The old status command has been removed
-        print("Error: The 'jrnl status' command has been removed. Use 'jrnl list task status' instead.")
+        print("Command 'j status' has been removed. Use 'j help' to see available commands.")
     elif cmd in ["due", "d"]:
         # The old due command has been removed
-        print("Error: The 'jrnl due' command has been removed. Use 'jrnl list task due' instead.")
+        print("Command 'j due' has been removed. Use 'j help' to see available commands.")
     elif cmd == "recur":
         # The 'recur' command has been replaced with the consolidated command
-        print("Error: The 'recur' command has been removed. Use 'jrnl task <id> edit -recur <Nd|Nw|Nm|Ny>' instead.")
+        print("Command 'j recur' has been removed. Use 'j help' to see available commands.")
     elif cmd in ["waiting", "start", "restart"]:
         # The old status commands have been removed
-        print(f"Error: The 'jrnl {cmd}' command has been removed. Use 'jrnl {cmd} task <id>[,<id>...]' instead.")
+        print(f"Command 'j {cmd}' has been removed. Use 'j help' to see available commands.")
     elif cmd == "delete":
-        # The delete command should be handled by 'jrnl rm task ...'
-        print("Error: The 'jrnl delete' command has been removed. Use 'jrnl rm task <id>[,<id>...]' instead.")
+        # The delete command should be handled by 'j rm task ...'
+        print("Command 'j delete' has been removed. Use 'j help' to see available commands.")
     elif cmd == "list" and len(rest) >= 1:
-        # New consolidated command: jrnl list <page|note|task> <optional: due|status|done>
+        # New consolidated command: j list <page|note|task> <optional: due|status|done>
         if rest[0] == "page":
             show_journal()
         elif rest[0] == "note":
@@ -1533,7 +1517,7 @@ def main():
             else:
                 print("Error: Invalid task list option. Use 'due', 'status', or 'done'")
         else:
-            print("Error: Invalid syntax. Use 'jrnl list <page|note|task>' or 'jrnl list task <due|status|done>'")
+            print("Error: Invalid syntax. Use 'j list <page|note|task>' or 'j list task <due|status|done>'")
     elif cmd == "search":
         if rest:
             search_text = " ".join(rest)
