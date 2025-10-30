@@ -608,7 +608,9 @@ def edit_note(note_id, new_text):
 
 def delete_task(task_ids):
     """Delete tasks from the database along with their child tasks recursively"""
-    deleted_count = 0
+    if not task_ids:
+        print("No tasks to delete")
+        return
     
     # Get all tasks that need to be deleted (including children)
     all_tasks_to_delete = set(task_ids)
@@ -628,7 +630,21 @@ def delete_task(task_ids):
             current_tasks = [child[0] for child in children]
             all_tasks_to_delete.update(current_tasks)
     
+    # Ask for confirmation before deletion
+    total_tasks = len(all_tasks_to_delete)
+    if total_tasks == 0:
+        print("No tasks to delete")
+        return
+    
+    print(f"Warning: You are about to delete {total_tasks} task(s) (including children). This action cannot be undone.")
+    confirmation = input("Type 'yes' to confirm deletion: ").strip().lower()
+    
+    if confirmation != 'yes':
+        print("Deletion cancelled.")
+        return
+    
     # Now delete all tasks and their associated notes
+    deleted_count = 0
     with sqlite3.connect(DB_FILE) as conn:
         for tid in all_tasks_to_delete:
             # Delete associated notes
@@ -645,6 +661,19 @@ def delete_task(task_ids):
 
 def delete_note(note_ids):
     """Delete notes from the database"""
+    if not note_ids:
+        print("No notes to delete")
+        return
+    
+    # Ask for confirmation before deletion
+    total_notes = len(note_ids)
+    print(f"Warning: You are about to delete {total_notes} note(s). This action cannot be undone.")
+    confirmation = input("Type 'yes' to confirm deletion: ").strip().lower()
+    
+    if confirmation != 'yes':
+        print("Deletion cancelled.")
+        return
+    
     deleted_count = 0
     with sqlite3.connect(DB_FILE) as conn:
         for nid in note_ids:
