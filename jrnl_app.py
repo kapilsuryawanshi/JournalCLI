@@ -479,6 +479,7 @@ def update_task_status(task_ids, status, note_text=None):
                     # Create a new task with the same details but new due date
 
                     old_task_id, title, due_date, recur = task
+                    # Calculate next due date from the completion date (today)
                     new_due_date = calculate_next_due_date(today, recur)
                     
                     # Insert the new recurring parent task
