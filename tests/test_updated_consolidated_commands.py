@@ -156,9 +156,10 @@ def test_old_note_command_removed():
             jrnl_app.main()
         output = f.getvalue()
         
-        # Should show error message about removed command
+        # Should show error message about what the command does now
         assert "Error" in output
-        assert "list note" in output
+        # Current behavior: 'note' command now creates a note, so it expects text
+        assert "provide note text" in output
     finally:
         sys.argv = original_argv
 

@@ -11,6 +11,7 @@ import sys
 from datetime import datetime, timedelta
 from io import StringIO
 from contextlib import redirect_stdout
+from unittest.mock import patch
 
 # Add the project directory to sys.path so we can import jrnl_app
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -53,7 +54,7 @@ def test_consolidated_rm_note_by_id():
     
     try:
         f = StringIO()
-        with redirect_stdout(f):
+        with redirect_stdout(f), patch('builtins.input', return_value='yes'):
             jrnl_app.main()
         output = f.getvalue()
         
@@ -83,7 +84,7 @@ def test_consolidated_rm_task_by_id():
     
     try:
         f = StringIO()
-        with redirect_stdout(f):
+        with redirect_stdout(f), patch('builtins.input', return_value='yes'):
             jrnl_app.main()
         output = f.getvalue()
         
@@ -115,7 +116,7 @@ def test_consolidated_rm_multiple_notes():
     
     try:
         f = StringIO()
-        with redirect_stdout(f):
+        with redirect_stdout(f), patch('builtins.input', return_value='yes'):
             jrnl_app.main()
         output = f.getvalue()
         
@@ -148,7 +149,7 @@ def test_consolidated_rm_multiple_tasks():
     
     try:
         f = StringIO()
-        with redirect_stdout(f):
+        with redirect_stdout(f), patch('builtins.input', return_value='yes'):
             jrnl_app.main()
         output = f.getvalue()
         

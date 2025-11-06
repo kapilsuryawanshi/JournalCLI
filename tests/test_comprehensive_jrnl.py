@@ -7,6 +7,7 @@ import sys
 from datetime import datetime, timedelta
 from io import StringIO
 from contextlib import redirect_stdout
+from unittest.mock import patch
 import argparse
 
 # Add the project directory to sys.path so we can import jrnl_app
@@ -534,12 +535,13 @@ def test_delete_task():
         note = conn.execute("SELECT id FROM notes WHERE task_id=?", (task_id,)).fetchone()
         assert note is not None
     
-    # Delete the task
-    f = StringIO()
-    with redirect_stdout(f):
-        jrnl_app.delete_task([task_id])
-    output = f.getvalue()
-    assert "Deleted 1 task(s)" in output
+    # Delete the task - mock the input to confirm deletion
+    with patch('builtins.input', return_value='yes'):
+        f = StringIO()
+        with redirect_stdout(f):
+            jrnl_app.delete_task([task_id])
+        output = f.getvalue()
+        assert "Deleted 1 task(s)" in output
     
     # Verify task and its notes were deleted
     with sqlite3.connect(DB_FILE) as conn:
@@ -568,12 +570,13 @@ def test_delete_note():
         note = conn.execute("SELECT id FROM notes WHERE id=?", (note_id,)).fetchone()
         assert note is not None
     
-    # Delete the note
-    f = StringIO()
-    with redirect_stdout(f):
-        jrnl_app.delete_note([note_id])
-    output = f.getvalue()
-    assert "Deleted 1 note(s)" in output
+    # Delete the note - mock the input to confirm deletion
+    with patch('builtins.input', return_value='yes'):
+        f = StringIO()
+        with redirect_stdout(f):
+            jrnl_app.delete_note([note_id])
+        output = f.getvalue()
+        assert "Deleted 1 note(s)" in output
     
     # Verify the note was deleted
     with sqlite3.connect(DB_FILE) as conn:
@@ -622,7 +625,7 @@ def test_format_task():
     
     # Get the task
     with sqlite3.connect(DB_FILE) as conn:
-        task = conn.execute("SELECT id, title, status, creation_date, due_date, completion_date, recur FROM tasks").fetchone()
+        task = conn.execute("SELECT id, title, status, creation_date, due_date, completion_date, recur, pid FROM tasks").fetchone()
         assert task is not None
     
     # Format the task

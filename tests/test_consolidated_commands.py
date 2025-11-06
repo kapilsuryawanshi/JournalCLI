@@ -1,6 +1,6 @@
 """Pytest unit tests for the new consolidated commands in jrnl application:
-- jrnl new note <text> [-link <id>[,<id>,...]]
-- jrnl new task <text> [-due @<YYYY-MM-DD|today|tomorrow|eow|eom|eoy>] [-recur <Nd|Nw|Nm|Ny>]
+- jrnl note <text> [-link <id>[,<id>,...]]
+- jrnl task <text> [-due @<YYYY-MM-DD|today|tomorrow|eow|eom|eoy>] [-recur <Nd|Nw|Nm|Ny>]
 """
 
 import sqlite3
@@ -37,9 +37,9 @@ def teardown_function(function):
 
 def test_consolidated_new_note_basic():
     """Test adding a basic standalone note with the new command."""
-    # Simulate command line arguments for "jrnl new note Test note text"
+    # Simulate command line arguments for "jrnl note Test note text"
     original_argv = sys.argv.copy()
-    sys.argv = ["jrnl_app.py", "new", "note", "Test note text"]
+    sys.argv = ["jrnl_app.py", "note", "Test note text"]
     
     try:
         # Capture stdout to check output
@@ -72,9 +72,9 @@ def test_consolidated_new_note_with_links():
         note1_id = note_ids[0]
         note2_id = note_ids[1]
     
-    # Simulate command line arguments for "jrnl new note Test note -link <id>,<id>"
+    # Simulate command line arguments for "jrnl note Test note -link <id>,<id>"
     original_argv = sys.argv.copy()
-    sys.argv = ["jrnl_app.py", "new", "note", "Test note with links", "-link", f"{note1_id},{note2_id}"]
+    sys.argv = ["jrnl_app.py", "note", "Test note with links", "-link", f"{note1_id},{note2_id}"]
     
     try:
         f = StringIO()
@@ -102,9 +102,9 @@ def test_consolidated_new_note_with_links():
 
 def test_consolidated_new_task_basic():
     """Test adding a basic task with the new command."""
-    # Simulate command line arguments for "jrnl new task Test task text"
+    # Simulate command line arguments for "jrnl task Test task text"
     original_argv = sys.argv.copy()
-    sys.argv = ["jrnl_app.py", "new", "task", "Test task text"]
+    sys.argv = ["jrnl_app.py", "task", "Test task text"]
     
     try:
         f = StringIO()
@@ -127,9 +127,9 @@ def test_consolidated_new_task_basic():
 
 def test_consolidated_new_task_with_due_date():
     """Test adding a task with a due date."""
-    # Simulate command line arguments for "jrnl new task Test task -due @tomorrow"
+    # Simulate command line arguments for "jrnl task Test task -due @tomorrow"
     original_argv = sys.argv.copy()
-    sys.argv = ["jrnl_app.py", "new", "task", "Test task with due date", "-due", "@tomorrow"]
+    sys.argv = ["jrnl_app.py", "task", "Test task with due date", "-due", "@tomorrow"]
     
     try:
         f = StringIO()
@@ -151,9 +151,9 @@ def test_consolidated_new_task_with_due_date():
 
 def test_consolidated_new_task_with_explicit_due_date():
     """Test adding a task with an explicit due date."""
-    # Simulate command line arguments for "jrnl new task Test task -due @2025-12-25"
+    # Simulate command line arguments for "jrnl task Test task -due @2025-12-25"
     original_argv = sys.argv.copy()
-    sys.argv = ["jrnl_app.py", "new", "task", "Test task with explicit due date", "-due", "@2025-12-25"]
+    sys.argv = ["jrnl_app.py", "task", "Test task with explicit due date", "-due", "@2025-12-25"]
     
     try:
         f = StringIO()
@@ -174,9 +174,9 @@ def test_consolidated_new_task_with_explicit_due_date():
 
 def test_consolidated_new_task_with_recurrence():
     """Test adding a task with recurrence."""
-    # Simulate command line arguments for "jrnl new task Test task -recur 2w"
+    # Simulate command line arguments for "jrnl task Test task -recur 2w"
     original_argv = sys.argv.copy()
-    sys.argv = ["jrnl_app.py", "new", "task", "Test recurring task", "-recur", "2w"]
+    sys.argv = ["jrnl_app.py", "task", "Test recurring task", "-recur", "2w"]
     
     try:
         f = StringIO()
@@ -197,9 +197,9 @@ def test_consolidated_new_task_with_recurrence():
 
 def test_consolidated_new_task_with_due_date_and_recurrence():
     """Test adding a task with both due date and recurrence."""
-    # Simulate command line arguments for "jrnl new task Test task -due @tomorrow -recur 1w"
+    # Simulate command line arguments for "jrnl task Test task -due @tomorrow -recur 1w"
     original_argv = sys.argv.copy()
-    sys.argv = ["jrnl_app.py", "new", "task", "Test recurring task with due date", "-due", "@tomorrow", "-recur", "1w"]
+    sys.argv = ["jrnl_app.py", "task", "Test recurring task with due date", "-due", "@tomorrow", "-recur", "1w"]
     
     try:
         f = StringIO()
@@ -220,9 +220,9 @@ def test_consolidated_new_task_with_due_date_and_recurrence():
     finally:
         sys.argv = original_argv
 
-def test_old_note_command_removed():
-    """Test that the old 'jrnl note <text>' command is no longer available."""
-    # Simulate command line arguments for "jrnl note Test note text" (old command)
+def test_new_note_command_works():
+    """Test that the new 'jrnl note <text>' command is now available."""
+    # Simulate command line arguments for "jrnl note Test note text"
     original_argv = sys.argv.copy()
     sys.argv = ["jrnl_app.py", "note", "Test note text"]
     
@@ -232,16 +232,21 @@ def test_old_note_command_removed():
             jrnl_app.main()
         output = f.getvalue()
         
-        # The old command should not work with text directly
-        # It should either show an error or treat it as a note lookup
-        # Based on current implementation, it will be treated as showing all notes
-        assert "Show all notes" in output or "Error" in output or output.strip() == ""
+        # The new command should work and add a standalone note
+        assert "Added standalone note" in output
+        
+        # Verify the note was actually added to the database
+        with sqlite3.connect(DB_FILE) as conn:
+            note = conn.execute("SELECT text, task_id FROM notes WHERE text='Test note text'").fetchone()
+            assert note is not None
+            assert note[0] == "Test note text"
+            assert note[1] is None  # Should not be associated with any task
     finally:
         sys.argv = original_argv
 
-def test_old_task_command_removed():
-    """Test that the old 'jrnl task <text>' command is no longer available."""
-    # Simulate command line arguments for "jrnl task Test task text" (old command)
+def test_new_task_command_works():
+    """Test that the new 'jrnl task <text>' command is now available."""
+    # Simulate command line arguments for "jrnl task Test task text"
     original_argv = sys.argv.copy()
     sys.argv = ["jrnl_app.py", "task", "Test task text"]
     
@@ -251,11 +256,17 @@ def test_old_task_command_removed():
             jrnl_app.main()
         output = f.getvalue()
         
-        # The old command should not work with text directly
-        # It should show all unfinished tasks instead
-        # This is because the current implementation treats it as 'jrnl task' (show tasks)
-        # But when args are provided, it tries to add tasks
-        assert "Added 1 task(s)" in output or "Error" in output
+        # The new command should work and add a task
+        assert "Added 1 task(s)" in output
+        
+        # Verify the task was added with today's date
+        with sqlite3.connect(DB_FILE) as conn:
+            task = conn.execute("SELECT title, due_date FROM tasks WHERE title='Test task text'").fetchone()
+            assert task is not None
+            assert task[0] == "Test task text"
+            # Due date should be today
+            today = datetime.now().date().strftime("%Y-%m-%d")
+            assert task[1] == today
     finally:
         sys.argv = original_argv
 

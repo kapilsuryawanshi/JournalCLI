@@ -503,9 +503,10 @@ def update_task_status(task_ids, status, note_text=None):
                             
                             # Reset status to 'todo' and update due date to match parent's new due date
                             # Keep completion_date as NULL since it's a new task instance
+                            # Child tasks should not have recurrence, so set to None
                             new_child_id = conn.execute(
                                 "INSERT INTO tasks (title, status, creation_date, due_date, completion_date, recur, pid) VALUES (?,?,?,?,?,?,?)",
-                                (child_title, "todo", today, parent_due_date, None, child_recur, new_parent_id)
+                                (child_title, "todo", today, parent_due_date, None, None, new_parent_id)
                             ).lastrowid
                             
                             # Recursively recreate grandchildren and deeper levels
@@ -1128,9 +1129,9 @@ def main():
 
     if cmd is None:
         show_due()
-    elif cmd == "new" and len(rest) >= 2:  # Handle new consolidated commands
-        sub_cmd = rest[0]  # "note" or "task"
-        cmd_args = rest[1:]
+    elif cmd in ["task", "note"]:  # Handle new consolidated commands
+        sub_cmd = cmd  # "note" or "task"
+        cmd_args = rest
         
         if sub_cmd == "note":  # Handle "j new note <text> [-link <id>[,<id>,...]]"
             # Find the note text (everything before the first option flag)
@@ -1225,6 +1226,11 @@ def main():
                             print(f"Error: Parent task with ID {parent_id} does not exist")
                             return
                 
+                # For child tasks, recurrence should be ignored
+                if parent_id is not None and recur_pattern is not None:
+                    print(f"Warning: Recurrence pattern '{recur_pattern}' is ignored for child tasks")
+                    recur_pattern = None  # Don't allow recurrence for child tasks
+                
                 # Add the task with due date if specified
                 if due_date:
                     # Create a temporary task with due date
@@ -1259,13 +1265,13 @@ def main():
             else:
                 print("Error: Please provide task text")
     
-    elif cmd in ["page", "p"]:
+    elif cmd in ["page"]:
         # The old 'j page|p' command has been removed
         print("Command 'j page|p' has been removed. Use 'j help' to see available commands.")
-    elif cmd in ["task", "t"] and rest:  # Handle task commands
+    elif cmd in ["task"] and rest:  # Handle task commands
         # The old task command (j task <text>) has been removed
         print("Command 'j task <text>' has been removed. Use 'j help' to see available commands.")
-    elif cmd in ["note", "n"] and rest:  # Handle note commands with arguments
+    elif cmd in ["note"] and rest:  # Handle note commands with arguments
         # Check if first argument is a single digit/number (for note lookup)
         if len(rest) == 1 and rest[0].isdigit():
             # The old note command (j note <id>) has been removed
@@ -1273,9 +1279,6 @@ def main():
         else:
             # The old note command (j note <text>) and edit command (j note <id> edit) have been removed
             print("Commands 'j note <text>' and 'j note <id> edit' have been removed. Use 'j help' to see available commands.")
-    elif cmd == "view" and len(rest) >= 2:
-        # New consolidated command: j view task <due|status|done>
-        print("Command 'j view' has been removed. Use 'j help' to see available commands.")
     elif cmd in ["start", "restart", "waiting"] and len(rest) >= 2 and rest[0] == "task":
         # New consolidated command: j <start|restart|waiting> task <id>[,<id>,...]
         ids_str = rest[1]
@@ -1346,12 +1349,6 @@ def main():
                 print(f"Error: Task with ID {item_id} not found")
         else:
             print("Error: Invalid syntax. Use 'j show <note|task> <id>'")
-    elif cmd in ["task", "t"]:
-        # The old 'j task' command has been removed
-        print("Command 'j task' has been removed. Use 'j help' to see available commands.")
-    elif cmd in ["note", "n"]:
-        # The old 'j note' command has been removed
-        print("Command 'j note' has been removed. Use 'j help' to see available commands.")
     elif cmd == "edit" and len(rest) >= 2:
         # New consolidated edit syntax: j edit <note|task> <id> [options]
         item_type = rest[0].lower()
@@ -1445,18 +1442,6 @@ def main():
                 # Validate and set recur pattern
                 if set_task_recur([item_id], recur_pattern):
                     print(f"Set recur pattern '{recur_pattern}' for task {item_id}")
-    elif cmd == "edit":
-        if rest and len(rest) >= 2:
-            item_identifier = rest[0]
-            new_text = " ".join(rest[1:])
-            
-            # Check if the identifier starts with 't' (task)
-            if item_identifier.startswith("t") and item_identifier[1:].isdigit():
-                print("Command 'j task <id> edit' has been removed. Use 'j help' to see available commands.")
-            else:
-                print("Command 'j note <id> edit' has been removed. Use 'j help' to see available commands.")
-        else:
-            print("Command 'j edit' has been removed. Use 'j help' to see available commands.")
     elif cmd == "rm":
         if rest and len(rest) >= 2:
             # Consolidated syntax: j rm <note|task> <id>[,<id>,...]
@@ -1473,31 +1458,10 @@ def main():
                 return
         else:
             print("Old syntax 'j rm t<id>[,n<id>...] has been removed. Use 'j help' to see available commands.")
-    elif cmd in ["task", "t"]:
+    elif cmd in ["task"]:
         show_task()
-    elif cmd in ["note", "n"]:
+    elif cmd in ["note"]:
         show_note()
-    elif cmd == "done" and not rest:  # Only if no additional arguments (to distinguish from 'done' status command)
-        # The old done command has been removed
-        print("Command 'j done' has been removed. Use 'j help' to see available commands.")
-    elif cmd in ["done", "x"] and rest:
-        # The old done command has been removed
-        print("Command 'j done <id> <note>' has been removed. Use 'j help' to see available commands.")
-    elif cmd in ["status", "s"]:
-        # The old status command has been removed
-        print("Command 'j status' has been removed. Use 'j help' to see available commands.")
-    elif cmd in ["due", "d"]:
-        # The old due command has been removed
-        print("Command 'j due' has been removed. Use 'j help' to see available commands.")
-    elif cmd == "recur":
-        # The 'recur' command has been replaced with the consolidated command
-        print("Command 'j recur' has been removed. Use 'j help' to see available commands.")
-    elif cmd in ["waiting", "start", "restart"]:
-        # The old status commands have been removed
-        print(f"Command 'j {cmd}' has been removed. Use 'j help' to see available commands.")
-    elif cmd == "delete":
-        # The delete command should be handled by 'j rm task ...'
-        print("Command 'j delete' has been removed. Use 'j help' to see available commands.")
     elif cmd == "list" and len(rest) >= 1:
         # New consolidated command: j list <page|note|task> <optional: due|status|done>
         if rest[0] == "page":
@@ -1533,10 +1497,10 @@ USAGE:
 
 COMMANDS:
     j
-        Show tasks grouped by due date (default view) (Overdue / Due Today / Due Tomorrow / This Week / This Month / Future / No Due Date)
-    j new note <text> [-link <id>[,<id>,...]]
+        Show tasks grouped by due date (default view) (Overdue / Due Today / Due Tomorrow / This Week / This Month / Future)
+    j note <text> [-link <id>[,<id>,...]]
         Add a new note with optional links
-    j new task [@<pid>] <text> [-due <YYYY-MM-DD|today|tomorrow|eow|eom|eoy>] [-recur <Nd|Nw|Nm|Ny>]
+    j task [@<pid>] <text> [-due <YYYY-MM-DD|today|tomorrow|eow|eom|eoy>] [-recur <Nd|Nw|Nm|Ny>]
         Add a new task with optional parent task, due date and recurrence
     j edit note <id> [-text <text>] [-link <id>[,<id>,...]] [-unlink <id>[,<id>,...]]
         Edit note with optional text, linking, unlinking

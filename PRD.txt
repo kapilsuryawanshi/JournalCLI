@@ -54,7 +54,7 @@ jrnl is a minimalist, command-line based tool designed for users who want to man
 
 **Create Task(s)**
 ```
-jrnl new task <text> [-due @<YYYY-MM-DD|keyword>] [-recur <Nd|Nw|Nm|Ny>]
+jrnl task <text> [-due @<YYYY-MM-DD|keyword>] [-recur <Nd|Nw|Nm|Ny>]
 ```
 - Creates one or more tasks with optional due dates and recurrence
 - Keywords: `today`, `tomorrow`, `eow` (end of week), `eom` (end of month), `eoy` (end of year), day names (monday, tuesday, etc.)
@@ -62,7 +62,7 @@ jrnl new task <text> [-due @<YYYY-MM-DD|keyword>] [-recur <Nd|Nw|Nm|Ny>]
 
 **Create Note**
 ```
-jrnl new note <text> [-link <id>[,<id>,...]]
+jrnl note <text> [-link <id>[,<id>,...]]
 ```
 - Creates a standalone note or links it to existing notes
 - Optional linking to other notes for knowledge graph functionality

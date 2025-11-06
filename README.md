@@ -101,12 +101,12 @@ j show task <id>
 
 **Create tasks**:
 ```
-j new task [@<pid>] <text> [-due <YYYY-MM-DD|keyword>] [-recur <Nd|Nw|Nm|Ny>]
+j task [@<pid>] <text> [-due <YYYY-MM-DD|keyword>] [-recur <Nd|Nw|Nm|Ny>]
 ```
 Examples:
-- `j new task "Buy groceries"`
-- `j new task @123 "Meeting with team" -due tomorrow`
-- `j new task "Weekly report" -due eow -recur 1w`
+- `j task "Buy groceries"`
+- `j task @123 "Meeting with team" -due tomorrow`
+- `j task "Weekly report" -due eow -recur 1w`
 
 Due date keywords: `today`, `tomorrow`, `eow` (end of week), `eom` (end of month), `eoy` (end of year), day names (monday, tuesday, etc.)
 
@@ -114,11 +114,11 @@ Recurrence patterns: `Nd` (N days), `Nw` (N weeks), `Nm` (N months), `Ny` (N yea
 
 **Create notes**:
 ```
-j new note <text> [-link <id>[,<id>,...]]
+j note <text> [-link <id>[,<id>,...]]
 ```
 Examples:
-- `j new note "Interesting idea for project"`
-- `j new note "Follow up on meeting" -link 1,2`
+- `j note "Interesting idea for project"`
+- `j note "Follow up on meeting" -link 1,2`
 
 ### Modification Commands
 
