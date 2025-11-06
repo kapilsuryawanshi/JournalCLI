@@ -78,62 +78,70 @@ jrnl list task due
 **Journal View** (replaces `jrnl page|p`)
 ```
 jrnl list page
+jrnl ls page  # New alias for 'list'
 ```
 - Shows journal grouped by creation date
 
 **Task List** (replaces `jrnl tasks`)
 ```
 jrnl list task
+jrnl ls task  # New alias for 'list'
 ```
 - Shows all unfinished tasks grouped by creation date
 
 **Status View** (replaces `jrnl status|s`)
 ```
 jrnl list task status
+jrnl ls task status  # New alias for 'list'
 ```
 - Shows tasks grouped by status (Todo, Doing, Waiting)
 
 **Due Date View** (replaces `jrnl due|d`)
 ```
 jrnl list task due
+jrnl ls task due  # New alias for 'list'
 ```
 - Shows tasks grouped by due date
 
 **Completion View** (replaces `jrnl done`)
 ```
 jrnl list task done
+jrnl ls task done  # New alias for 'list'
 ```
 - Shows all completed tasks grouped by completion date
 
 **Note List** (replaces `jrnl notes`)
 ```
 jrnl list note
+jrnl ls note  # New alias for 'list'
 ```
 - Shows all notes
 
-**Specific Note View** (replaces `jrnl note <id>`)
+**Specific Note View** (replaces `jrnl show note <id>`):
 ```
-jrnl show note <id>
+jrnl note <id>
 ```
-- Shows a specific note with linked notes
+- Shows a specific note with linked notes. To edit, use additional options like `-text`, `-link`, `-unlink`.
 
-**Specific Task View**
+**Specific Task View** (replaces `jrnl show task <id>`):
 ```
-jrnl show task <id>
+jrnl task <id>
 ```
-- Shows a specific task with related notes
+- Shows a specific task with its subtasks. To edit, use additional options like `-text`, `-due`, `-note`, `-recur`.
 
 #### 4.2.3 Modification Commands
 
 **Edit Task** (consolidates old edit syntax)
 ```
-jrnl edit task <id> [-text <text>] [-due <text>] [-note <text>] [-recur <Nd|Nw|Nm|Ny>]
+jrnl task <id> [-text <text>] [-due <text>] [-note <text>] [-recur <Nd|Nw|Nm|Ny>]
 ```
+(Note: `jrnl edit task <id> ...` is now deprecated)
 
 **Edit Note** (consolidates old edit syntax)
 ```
-jrnl edit note <id> [-text <text>] [-link <id>[,<id>,...]] [-unlink <id>[,<id>,...]]
+jrnl note <id> [-text <text>] [-link <id>[,<id>,...]] [-unlink <id>[,<id>,...]]
 ```
+(Note: `jrnl edit note <id> ...` is now deprecated)
 
 **Task Status Operations**
 ```
@@ -146,6 +154,12 @@ jrnl done task <id>[,<id>...] <note>   # Mark as 'done' with completion note
 **Adjust Due Date**
 ```
 jrnl due task <id> <keyword|YYYY-MM-DD>
+```
+
+**Show Specific Items** (new consolidated syntax)
+```
+jrnl note <id>    # Show specific note with linked notes
+jrnl task <id>    # Show specific task with related notes
 ```
 
 #### 4.2.4 Deletion Commands

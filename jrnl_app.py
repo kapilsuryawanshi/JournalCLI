@@ -32,7 +32,10 @@ def init_db():
             due_date TEXT NOT NULL,
             completion_date TEXT,
             recur TEXT,
-            pid INTEGER
+            pid INTEGER,
+            parent_note_id INTEGER,
+            FOREIGN KEY(pid) REFERENCES tasks(id),
+            FOREIGN KEY(parent_note_id) REFERENCES notes(id)
         )""")
         
         # Check if recur column exists, and add it if it doesn't
@@ -48,6 +51,13 @@ def init_db():
         except sqlite3.OperationalError:
             # Column already exists, which is fine
             pass
+
+        # Check if parent_note_id column exists, and add it if it doesn't
+        try:
+            conn.execute("ALTER TABLE tasks ADD COLUMN parent_note_id INTEGER")
+        except sqlite3.OperationalError:
+            # Column already exists, which is fine
+            pass
         
         conn.execute("""
         CREATE TABLE IF NOT EXISTS notes (
@@ -55,9 +65,18 @@ def init_db():
             text TEXT NOT NULL,
             creation_date TEXT NOT NULL,
             task_id INTEGER,
-            FOREIGN KEY(task_id) REFERENCES tasks(id)
+            parent_note_id INTEGER,
+            FOREIGN KEY(task_id) REFERENCES tasks(id),
+            FOREIGN KEY(parent_note_id) REFERENCES notes(id)
         )""")
         
+        # Check if parent_note_id column exists in notes, and add it if it doesn't
+        try:
+            conn.execute("ALTER TABLE notes ADD COLUMN parent_note_id INTEGER")
+        except sqlite3.OperationalError:
+            # Column already exists, which is fine
+            pass
+
         # Create table for linking notes to each other
         conn.execute("""
         CREATE TABLE IF NOT EXISTS note_links (
@@ -430,17 +449,44 @@ def add_task(texts):
     if added_count > 0:
         print(f"Added {added_count} task(s)")
 
-def add_note(task_ids, text):
+def add_note_under_note(parent_note_id, text):
+    """Add a note under another specific note"""
+    # Verify the parent note exists
+    with sqlite3.connect(DB_FILE) as conn:
+        parent_note = conn.execute("SELECT id FROM notes WHERE id=?", (parent_note_id,)).fetchone()
+        if not parent_note:
+            print(f"Error: Parent note with ID {parent_note_id} does not exist")
+            return False
+    
+    # Add the note with parent_note_id
+    today = datetime.now().date().strftime("%Y-%m-%d")
+    with sqlite3.connect(DB_FILE) as conn:
+        conn.execute(
+            "INSERT INTO notes (text,creation_date,parent_note_id) VALUES (?,?,?)",
+            (text, today, parent_note_id)
+        )
+    print(f"Added note under parent note {parent_note_id}")
+    return True
+
+def add_note(task_ids, text, parent_note_id=None):
     today = datetime.now().date().strftime("%Y-%m-%d")
     added_count = 0
     with sqlite3.connect(DB_FILE) as conn:
-        if not task_ids:
+        if not task_ids and parent_note_id is None:
             conn.execute(
                 "INSERT INTO notes (text,creation_date) VALUES (?,?)",
                 (text, today)
             )
             added_count += 1
+        elif parent_note_id is not None:
+            # Add note under parent note
+            conn.execute(
+                "INSERT INTO notes (text,creation_date,parent_note_id) VALUES (?,?,?)",
+                (text, today, parent_note_id)
+            )
+            added_count += 1
         else:
+            # Add note under tasks
             for tid in task_ids:
                 conn.execute(
                     "INSERT INTO notes (text,creation_date,task_id) VALUES (?,?,?)",
@@ -448,7 +494,9 @@ def add_note(task_ids, text):
                 )
                 added_count += 1
     if added_count > 0:
-        if task_ids:
+        if parent_note_id is not None:
+            print(f"Added note under parent note {parent_note_id}")
+        elif task_ids:
             print(f"Added note to {added_count} task(s)")
         else:
             print("Added standalone note")
@@ -704,6 +752,25 @@ def delete_task(task_ids):
         print(f"Deleted {deleted_count} task(s) (including children)")
     else:
         print("No tasks were deleted")
+
+def add_task_under_note(note_id, text):
+    """Add a task under a specific note"""
+    # Verify the note exists
+    with sqlite3.connect(DB_FILE) as conn:
+        note = conn.execute("SELECT id FROM notes WHERE id=?", (note_id,)).fetchone()
+        if not note:
+            print(f"Error: Note with ID {note_id} does not exist")
+            return False
+    
+    # Add the task with parent_note_id
+    today = datetime.now().date().strftime("%Y-%m-%d")
+    with sqlite3.connect(DB_FILE) as conn:
+        conn.execute(
+            "INSERT INTO tasks (title,status,creation_date,due_date,parent_note_id) VALUES (?,?,?,?,?)",
+            (text, "todo", today, today, note_id)
+        )
+    print(f"Added task to note {note_id}")
+    return True
 
 def delete_note(note_ids):
     """Delete notes from the database"""
@@ -1130,140 +1197,306 @@ def main():
     if cmd is None:
         show_due()
     elif cmd in ["task", "note"]:  # Handle new consolidated commands
-        sub_cmd = cmd  # "note" or "task"
-        cmd_args = rest
-        
-        if sub_cmd == "note":  # Handle "j new note <text> [-link <id>[,<id>,...]]"
-            # Find the note text (everything before the first option flag)
-            note_text = []
-            link_ids = []
-            i = 0
-            while i < len(cmd_args):
-                if cmd_args[i].startswith("-"):
-                    if cmd_args[i] == "-link" and i + 1 < len(cmd_args):
+        # Check if the first argument is a numeric ID (for editing/showing)
+        if rest and len(rest) >= 1 and rest[0].isdigit():
+            # Handle "j note <id> [options...]" or "j task <id> [options...]" (edit/show commands)
+            item_type = cmd  # "note" or "task"
+            item_id = int(rest[0])
+            options = rest[1:] if len(rest) > 1 else []  # Remaining args are options
+            
+            if item_type == "note":
+                # Parse options for note editing/showing
+                new_text = None
+                link_ids = []
+                unlink_ids = []
+                task_under_note = None  # For adding task under note
+                
+                i = 0
+                while i < len(options):
+                    if options[i] == "-text" and i + 1 < len(options):
+                        new_text = options[i + 1]
+                        i += 2
+                    elif options[i] == "-link" and i + 1 < len(options):
                         # Parse comma-separated list of IDs to link
-                        ids_str = cmd_args[i + 1]
+                        ids_str = options[i + 1]
                         ids = ids_str.split(",")
                         link_ids = [int(id_str) for id_str in ids if id_str.isdigit()]
                         i += 2
+                    elif options[i] == "-unlink" and i + 1 < len(options):
+                        # Parse comma-separated list of IDs to unlink
+                        ids_str = options[i + 1]
+                        ids = ids_str.split(",")
+                        unlink_ids = [int(id_str) for id_str in ids if id_str.isdigit()]
+                        i += 2
+                    elif options[i] == "-task" and i + 1 < len(options):
+                        # Add a task under this note
+                        task_under_note = options[i + 1]
+                        i += 2
                     else:
-                        # Unknown option
+                        # Skip unknown option
                         i += 1
-                else:
-                    note_text.append(cmd_args[i])
-                    i += 1
-            
-            if not note_text:
-                print("Error: Please provide note text")
-                return
-            
-            text = " ".join(note_text)
-            if text:
-                # Add the note first
-                add_note([], text)
                 
-                # Then create links if specified
-                if link_ids:
-                    # Get the ID of the newly added note
+                # Perform operations
+                if new_text:
+                    # Edit the note text
+                    edit_note(item_id, new_text)
+                elif task_under_note:
+                    # Add a task under this note
+                    add_task_under_note(item_id, task_under_note)
+                elif link_ids or unlink_ids:
+                    # Handle linking/unlinking
+                    for unlink_id in unlink_ids:
+                        unlink_notes(item_id, unlink_id)
+                    for link_id in link_ids:
+                        link_notes(item_id, link_id)
+                else:
+                    # Just show the note details if no options specified
+                    show_note_details(item_id)
+            elif item_type == "task":
+                # Parse options for task editing/showing
+                new_title = None
+                new_due = None
+                note_text = None
+                recur_pattern = None
+                
+                i = 0
+                while i < len(options):
+                    if options[i] == "-text" and i + 1 < len(options):
+                        new_title = options[i + 1]
+                        i += 2
+                    elif options[i] == "-due" and i + 1 < len(options):
+                        new_due = parse_due(options[i + 1])
+                        i += 2
+                    elif options[i] == "-note" and i + 1 < len(options):
+                        note_text = options[i + 1]
+                        i += 2
+                    elif options[i] == "-recur" and i + 1 < len(options):
+                        recur_pattern = options[i + 1]
+                        i += 2
+                    else:
+                        # Skip unknown option
+                        i += 1
+                
+                # Perform operations
+                if new_title:
+                    edit_task(item_id, new_title)
+                elif new_due:
                     with sqlite3.connect(DB_FILE) as conn:
-                        new_note_id = conn.execute("SELECT id FROM notes WHERE text=? ORDER BY id DESC LIMIT 1", (text,)).fetchone()
+                        conn.execute(
+                            "UPDATE tasks SET due_date=? WHERE id=?",
+                            (new_due.strftime("%Y-%m-%d"), item_id)
+                        )
+                        print(f"Updated due date for task {item_id} to {new_due.strftime('%Y-%m-%d')}")
+                elif note_text:
+                    # Add note to the task
+                    add_note([item_id], note_text)
+                elif recur_pattern:
+                    # Validate and set recur pattern
+                    if set_task_recur([item_id], recur_pattern):
+                        print(f"Set recur pattern '{recur_pattern}' for task {item_id}")
+                else:
+                    # Just show the task details if no options specified
+                    with sqlite3.connect(DB_FILE) as conn:
+                        task = conn.execute(
+                            "SELECT id,title,status,creation_date,due_date,completion_date,recur,pid FROM tasks WHERE id=?", 
+                            (item_id,)
+                        ).fetchone()
+                        
+                    if task:
+                        # Get all related tasks to build the tree (this task and its children)
+                        with sqlite3.connect(DB_FILE) as conn:
+                            all_related_tasks = conn.execute(
+                                """
+                                WITH RECURSIVE task_tree AS (
+                                    -- Base case: the selected task
+                                    SELECT id, title, status, creation_date, due_date, completion_date, recur, pid
+                                    FROM tasks
+                                    WHERE id = ?
+                                    
+                                    UNION ALL
+                                    
+                                    -- Recursive case: child tasks
+                                    SELECT t.id, t.title, t.status, t.creation_date, t.due_date, t.completion_date, t.recur, t.pid
+                                    FROM tasks t
+                                    JOIN task_tree tt ON t.pid = tt.id
+                                )
+                                SELECT * FROM task_tree
+                                ORDER BY id;
+                                """, 
+                                (item_id,)
+                            ).fetchall()
+                        
+                        # Build the tree structure but ensure the requested task is treated as root for display
+                        task_dict = {task[0]: task for task in all_related_tasks}
+                        children = {task[0]: [] for task in all_related_tasks}
+                        
+                        # Build the hierarchy - connect children to parents that exist in our result set
+                        for task in all_related_tasks:
+                            task_id = task[0]
+                            parent_id = task[7]  # pid field
+                            
+                            # If parent exists in our subset, establish the relationship
+                            if parent_id and parent_id in children:
+                                children[parent_id].append(task)
+                        
+                        # The requested task should be displayed as root regardless of its actual parent
+                        requested_task = task_dict[item_id]
+                        
+                        # Print the requested task with its subtree
+                        print_task_tree(requested_task, children, task_dict, is_last=True, prefix="", is_root=True)
+                    else:
+                        print(f"Error: Task with ID {item_id} not found")
+        else:
+            # Handle "j note <text> [-link <id>[,<id>,...]]" or "j task [@<pid>] <text> [-due XX] [-recur XX]" (add new commands) 
+            sub_cmd = cmd  # "note" or "task"
+            cmd_args = rest
+            
+            if sub_cmd == "note":  # Handle "j note <text> [-link <id>[,<id>,...]]" (add new note)
+                # Check if the first argument is a parent note ID in the format @<number>
+                parent_note_id = None
+                start_idx = 0
+                
+                if cmd_args and cmd_args[0].startswith("@") and cmd_args[0][1:].isdigit():
+                    parent_note_id = int(cmd_args[0][1:])  # Remove @ and convert to int
+                    start_idx = 1  # Skip the first argument as it's the parent ID
+                
+                # Find the note text (everything before the first option flag)
+                note_text = []
+                link_ids = []
+                i = start_idx
+                while i < len(cmd_args):
+                    if cmd_args[i].startswith("-"):
+                        if cmd_args[i] == "-link" and i + 1 < len(cmd_args):
+                            # Parse comma-separated list of IDs to link
+                            ids_str = cmd_args[i + 1]
+                            ids = ids_str.split(",")
+                            link_ids = [int(id_str) for id_str in ids if id_str.isdigit()]
+                            i += 2
+                        else:
+                            # Unknown option
+                            i += 1
+                    else:
+                        note_text.append(cmd_args[i])
+                        i += 1
+                
+                if not note_text:
+                    print("Error: Please provide note text")
+                    return
+                
+                text = " ".join(note_text)
+                if text:
+                    # Check if parent_note_id exists if provided
+                    if parent_note_id is not None:
+                        with sqlite3.connect(DB_FILE) as conn:
+                            cursor = conn.execute("SELECT id FROM notes WHERE id = ?", (parent_note_id,))
+                            if not cursor.fetchone():
+                                print(f"Error: Parent note with ID {parent_note_id} does not exist")
+                                return
                     
-                    if new_note_id:
-                        note_id = new_note_id[0]
-                        for link_id in link_ids:
-                            link_notes(note_id, link_id)
-            else:
-                print("Error: Please provide note text")
-        
-        elif sub_cmd == "task":  # Handle "j new task [@<pid>] <text> [-due <YYYY-MM-DD|today|tomorrow|eow|eom|eoy>] [-recur <Nd|Nw|Nm|Ny>]"
-            # Check if the first argument is a parent task ID in the format @<number>
-            parent_id = None
-            start_idx = 0
-            
-            if cmd_args and cmd_args[0].startswith("@") and cmd_args[0][1:].isdigit():
-                parent_id = int(cmd_args[0][1:])  # Remove @ and convert to int
-                start_idx = 1  # Skip the first argument as it's the parent ID
-            
-            # Find the task text (everything before the first option flag)
-            task_text = []
-            due_date = None
-            recur_pattern = None
-            i = start_idx
-            while i < len(cmd_args):
-                if cmd_args[i].startswith("-"):
-                    if cmd_args[i] == "-due" and i + 1 < len(cmd_args):
-                        due_kw = cmd_args[i + 1]
-                        # Remove @ symbol if present (for due dates like @tomorrow, @2025-12-25)
-                        if due_kw.startswith("@"):
-                            due_kw = due_kw[1:]
-                        due_date = parse_due(due_kw)
-                        i += 2
-                    elif cmd_args[i] == "-recur" and i + 1 < len(cmd_args):
-                        recur_pattern = cmd_args[i + 1]
-                        # Validate the recurrence pattern
-                        if not set_task_recur([0], recur_pattern):  # Use 0 as placeholder, we'll update later
-                            print("Error: Invalid recurrence pattern. Use format: <number><unit> (e.g., 4w, 2d, 1m, 1y)")
-                            return
-                        i += 2
+                    # Add the note with parent if specified
+                    add_note([], text, parent_note_id)
+                    
+                    # Then create links if specified
+                    if link_ids:
+                        # Get the ID of the newly added note
+                        with sqlite3.connect(DB_FILE) as conn:
+                            new_note_id = conn.execute("SELECT id FROM notes WHERE text=? ORDER BY id DESC LIMIT 1", (text,)).fetchone()
+                        
+                        if new_note_id:
+                            note_id = new_note_id[0]
+                            for link_id in link_ids:
+                                link_notes(note_id, link_id)
+                else:
+                    print("Error: Please provide note text")
+            elif sub_cmd == "task":
+                # Check if the first argument is a parent task ID in the format @<number>
+                parent_id = None
+                start_idx = 0
+                
+                if cmd_args and cmd_args[0].startswith("@") and cmd_args[0][1:].isdigit():
+                    parent_id = int(cmd_args[0][1:])  # Remove @ and convert to int
+                    start_idx = 1  # Skip the first argument as it's the parent ID
+                
+                # Find the task text (everything before the first option flag)
+                task_text = []
+                due_date = None
+                recur_pattern = None
+                i = start_idx
+                while i < len(cmd_args):
+                    if cmd_args[i].startswith("-"):
+                        if cmd_args[i] == "-due" and i + 1 < len(cmd_args):
+                            due_kw = cmd_args[i + 1]
+                            # Remove @ symbol if present (for due dates like @tomorrow, @2025-12-25)
+                            if due_kw.startswith("@"):
+                                due_kw = due_kw[1:]
+                            due_date = parse_due(due_kw)
+                            i += 2
+                        elif cmd_args[i] == "-recur" and i + 1 < len(cmd_args):
+                            recur_pattern = cmd_args[i + 1]
+                            # Validate the recurrence pattern
+                            if not set_task_recur([0], recur_pattern):  # Use 0 as placeholder, we'll update later
+                                print("Error: Invalid recurrence pattern. Use format: <number><unit> (e.g., 4w, 2d, 1m, 1y)")
+                                return
+                            i += 2
+                        else:
+                            # Unknown option
+                            i += 1
                     else:
-                        # Unknown option
+                        task_text.append(cmd_args[i])
                         i += 1
-                else:
-                    task_text.append(cmd_args[i])
-                    i += 1
-            
-            if not task_text:
-                print("Error: Please provide task text")
-                return
-            
-            text = " ".join(task_text)
-            if text:
-                # Check if parent_id exists if provided
-                if parent_id is not None:
-                    with sqlite3.connect(DB_FILE) as conn:
-                        cursor = conn.execute("SELECT id FROM tasks WHERE id = ?", (parent_id,))
-                        if not cursor.fetchone():
-                            print(f"Error: Parent task with ID {parent_id} does not exist")
-                            return
                 
-                # For child tasks, recurrence should be ignored
-                if parent_id is not None and recur_pattern is not None:
-                    print(f"Warning: Recurrence pattern '{recur_pattern}' is ignored for child tasks")
-                    recur_pattern = None  # Don't allow recurrence for child tasks
+                if not task_text:
+                    print("Error: Please provide task text")
+                    return
                 
-                # Add the task with due date if specified
-                if due_date:
-                    # Create a temporary task with due date
-                    today = datetime.now().date().strftime("%Y-%m-%d")
-                    with sqlite3.connect(DB_FILE) as conn:
-                        task_id = conn.execute(
-                            "INSERT INTO tasks (title,status,creation_date,due_date,recur,pid) VALUES (?,?,?,?,?,?)",
-                            (text, "todo", today, due_date.strftime("%Y-%m-%d"), recur_pattern, parent_id)
-                        ).lastrowid
-                        print(f"Added 1 task(s)")
-                else:
-                    # Add task without due date (default to today)
-                    if recur_pattern:  # Need to call add_task with proper due date handling
-                        # Use today as default due date when recurrence is specified but due date isn't
-                        today = datetime.now().date()
-                        formatted_today = today.strftime("%Y-%m-%d")
+                text = " ".join(task_text)
+                if text:
+                    # Check if parent_id exists if provided
+                    if parent_id is not None:
+                        with sqlite3.connect(DB_FILE) as conn:
+                            cursor = conn.execute("SELECT id FROM tasks WHERE id = ?", (parent_id,))
+                            if not cursor.fetchone():
+                                print(f"Error: Parent task with ID {parent_id} does not exist")
+                                return
+                    
+                    # For child tasks, recurrence should be ignored
+                    if parent_id is not None and recur_pattern is not None:
+                        print(f"Warning: Recurrence pattern '{recur_pattern}' is ignored for child tasks")
+                        recur_pattern = None  # Don't allow recurrence for child tasks
+                    
+                    # Add the task with due date if specified
+                    if due_date:
+                        # Create a temporary task with due date
+                        today = datetime.now().date().strftime("%Y-%m-%d")
                         with sqlite3.connect(DB_FILE) as conn:
                             task_id = conn.execute(
                                 "INSERT INTO tasks (title,status,creation_date,due_date,recur,pid) VALUES (?,?,?,?,?,?)",
-                                (text, "todo", formatted_today, formatted_today, recur_pattern, parent_id)
+                                (text, "todo", today, due_date.strftime("%Y-%m-%d"), recur_pattern, parent_id)
                             ).lastrowid
-                        print(f"Added 1 task(s)")
+                            print(f"Added 1 task(s)")
                     else:
-                        # Call original add_task function for simple tasks but with parent ID
-                        today = datetime.now().date().strftime("%Y-%m-%d")
-                        with sqlite3.connect(DB_FILE) as conn:
-                            conn.execute(
-                                "INSERT INTO tasks (title,status,creation_date,due_date,pid) VALUES (?,?,?,?,?)",
-                                (text, "todo", today, today, parent_id)
-                            )
-                        print(f"Added 1 task(s)")
-            else:
-                print("Error: Please provide task text")
+                        # Add task without due date (default to today)
+                        if recur_pattern:  # Need to call add_task with proper due date handling
+                            # Use today as default due date when recurrence is specified but due date isn't
+                            today = datetime.now().date()
+                            formatted_today = today.strftime("%Y-%m-%d")
+                            with sqlite3.connect(DB_FILE) as conn:
+                                task_id = conn.execute(
+                                    "INSERT INTO tasks (title,status,creation_date,due_date,recur,pid) VALUES (?,?,?,?,?,?)",
+                                    (text, "todo", formatted_today, formatted_today, recur_pattern, parent_id)
+                                ).lastrowid
+                            print(f"Added 1 task(s)")
+                        else:
+                            # Call original add_task function for simple tasks but with parent ID
+                            today = datetime.now().date().strftime("%Y-%m-%d")
+                            with sqlite3.connect(DB_FILE) as conn:
+                                conn.execute(
+                                    "INSERT INTO tasks (title,status,creation_date,due_date,pid) VALUES (?,?,?,?,?)",
+                                    (text, "todo", today, today, parent_id)
+                                )
+                            print(f"Added 1 task(s)")
+                else:
+                    print("Error: Please provide task text")
     
     elif cmd in ["page"]:
         # The old 'j page|p' command has been removed
@@ -1302,146 +1535,19 @@ def main():
             return
         
         update_task_status(ids, "done", note_text)
-    elif cmd == "show" and len(rest) >= 2 and rest[0] in ["note", "task"]:
-        # New consolidated command: j show <note|task> <id>
-        item_type = rest[0]
-        item_id = int(rest[1]) if rest[1].isdigit() else None
-        
-        if item_type == "note" and item_id is not None:
-            show_note_details(item_id)
-        elif item_type == "task" and item_id is not None:
-            # For showing a specific task and its children
-            with sqlite3.connect(DB_FILE) as conn:
-                task = conn.execute(
-                    "SELECT id,title,status,creation_date,due_date,completion_date,recur,pid FROM tasks WHERE id=?", 
-                    (item_id,)
-                ).fetchone()
-                
-            if task:
-                # Get all related tasks to build the tree
-                with sqlite3.connect(DB_FILE) as conn:
-                    all_related_tasks = conn.execute(
-                        """
-                        WITH RECURSIVE task_tree AS (
-                            -- Base case: the selected task
-                            SELECT id, title, status, creation_date, due_date, completion_date, recur, pid
-                            FROM tasks
-                            WHERE id = ?
-                            
-                            UNION ALL
-                            
-                            -- Recursive case: child tasks
-                            SELECT t.id, t.title, t.status, t.creation_date, t.due_date, t.completion_date, t.recur, t.pid
-                            FROM tasks t
-                            JOIN task_tree tt ON t.pid = tt.id
-                        )
-                        SELECT * FROM task_tree
-                        ORDER BY id;
-                        """, 
-                        (item_id,)
-                    ).fetchall()
-                
-                # Build and print the tree for this specific task and its children
-                root_tasks, children, task_dict = build_task_tree(all_related_tasks)
-                if root_tasks:
-                    print_task_tree(root_tasks[0], children, task_dict, is_last=True, prefix="", is_root=True)  # No initial indent for top task
-            else:
-                print(f"Error: Task with ID {item_id} not found")
-        else:
-            print("Error: Invalid syntax. Use 'j show <note|task> <id>'")
+
+
     elif cmd == "edit" and len(rest) >= 2:
-        # New consolidated edit syntax: j edit <note|task> <id> [options]
+        # The 'j edit' command is now deprecated. Inform the user about the new syntax.
         item_type = rest[0].lower()
         item_id = int(rest[1]) if rest[1].isdigit() else None
         
-        if item_type not in ["note", "task"] or item_id is None:
-            print("Error: Invalid syntax. Use 'j edit note <id> [options]' or 'j edit task <id> [options]'")
-            return
-        
-        # Parse options
-        options = rest[2:]
         if item_type == "note":
-            # Handle note editing options
-            new_text = None
-            link_ids = []
-            unlink_ids = []
-            
-            i = 0
-            while i < len(options):
-                if options[i] == "-text" and i + 1 < len(options):
-                    new_text = options[i + 1]
-                    i += 2
-                elif options[i] == "-link" and i + 1 < len(options):
-                    # Parse comma-separated list of IDs to link
-                    ids_str = options[i + 1]
-                    ids = ids_str.split(",")
-                    link_ids = [int(id_str) for id_str in ids if id_str.isdigit()]
-                    i += 2
-                elif options[i] == "-unlink" and i + 1 < len(options):
-                    # Parse comma-separated list of IDs to unlink
-                    ids_str = options[i + 1]
-                    ids = ids_str.split(",")
-                    unlink_ids = [int(id_str) for id_str in ids if id_str.isdigit()]
-                    i += 2
-                else:
-                    # Skip unknown option
-                    i += 1
-            
-            # Perform operations in order: edit text, then unlink, then link
-            if new_text:
-                edit_note(item_id, new_text)
-            
-            for unlink_id in unlink_ids:
-                unlink_notes(item_id, unlink_id)
-            
-            for link_id in link_ids:
-                link_notes(item_id, link_id)
-        
+            print("The 'j edit note' command is deprecated. Use 'j note <id> [options]' instead.")
         elif item_type == "task":
-            # Handle task editing options
-            new_title = None
-            new_due = None
-            note_text = None
-            recur_pattern = None
-            
-            i = 0
-            while i < len(options):
-                if options[i] == "-text" and i + 1 < len(options):
-                    new_title = options[i + 1]
-                    i += 2
-                elif options[i] == "-due" and i + 1 < len(options):
-                    new_due = parse_due(options[i + 1])
-                    i += 2
-                elif options[i] == "-note" and i + 1 < len(options):
-                    note_text = options[i + 1]
-                    i += 2
-                elif options[i] == "-recur" and i + 1 < len(options):
-                    recur_pattern = options[i + 1]
-                    i += 2
-                else:
-                    # Skip unknown option
-                    i += 1
-            
-            # Perform operations
-            if new_title:
-                edit_task(item_id, new_title)
-            
-            if new_due:
-                with sqlite3.connect(DB_FILE) as conn:
-                    conn.execute(
-                        "UPDATE tasks SET due_date=? WHERE id=?",
-                        (new_due.strftime("%Y-%m-%d"), item_id)
-                    )
-                    print(f"Updated due date for task {item_id} to {new_due.strftime('%Y-%m-%d')}")
-            
-            if note_text:
-                # Add note to the task
-                add_note([item_id], note_text)
-                
-            if recur_pattern:
-                # Validate and set recur pattern
-                if set_task_recur([item_id], recur_pattern):
-                    print(f"Set recur pattern '{recur_pattern}' for task {item_id}")
+            print("The 'j edit task' command is deprecated. Use 'j task <id> [options]' instead.")
+        else:
+            print("The 'j edit' command is deprecated. Use 'j note <id> [options]' or 'j task <id> [options]' instead.")
     elif cmd == "rm":
         if rest and len(rest) >= 2:
             # Consolidated syntax: j rm <note|task> <id>[,<id>,...]
@@ -1462,8 +1568,8 @@ def main():
         show_task()
     elif cmd in ["note"]:
         show_note()
-    elif cmd == "list" and len(rest) >= 1:
-        # New consolidated command: j list <page|note|task> <optional: due|status|done>
+    elif cmd in ["list", "ls"] and len(rest) >= 1:
+        # New consolidated command: j list/ls <page|note|task> <optional: due|status|done>
         if rest[0] == "page":
             show_journal()
         elif rest[0] == "note":
@@ -1481,7 +1587,7 @@ def main():
             else:
                 print("Error: Invalid task list option. Use 'due', 'status', or 'done'")
         else:
-            print("Error: Invalid syntax. Use 'j list <page|note|task>' or 'j list task <due|status|done>'")
+            print("Error: Invalid syntax. Use 'j ls <page|note|task>' or 'j ls task <due|status|done>'")
     elif cmd == "search":
         if rest:
             search_text = " ".join(rest)
@@ -1498,20 +1604,22 @@ USAGE:
 COMMANDS:
     j
         Show tasks grouped by due date (default view) (Overdue / Due Today / Due Tomorrow / This Week / This Month / Future)
-    j note <text> [-link <id>[,<id>,...]]
-        Add a new note with optional links
+    j note [@<pid>] <text>
+        Add a new root note. If <pid> is given then add a note under parent note with ID <pid>
+    j note <id> [-text <text>] [-link <id>[,<id>,...]] [-unlink <id>[,<id>,...]] [-task <text>]
+        Edit note with optional text, linking, unlinking, adding subtask or show note details if no options
+    j note <id>
+        Show specific note details (use without options to view)
     j task [@<pid>] <text> [-due <YYYY-MM-DD|today|tomorrow|eow|eom|eoy>] [-recur <Nd|Nw|Nm|Ny>]
-        Add a new task with optional parent task, due date and recurrence
-    j edit note <id> [-text <text>] [-link <id>[,<id>,...]] [-unlink <id>[,<id>,...]]
-        Edit note with optional text, linking, unlinking
-    j edit task <id> [-text <text>] [-due <date>] [-note <text>] [-recur <pattern>]
-        Edit task with optional parameters
+        Add a new root task if no <pid> is given else add a new task under parent task with ID <pid>, with optional due date and recurrence
+    j task <id> [-text <text>] [-due <date>] [-note <text>] [-recur <pattern>]
+        Edit task with optional parameters or show task details if no options
+    j task <id>
+        Show specific task details (use without options to view)
     j rm <note|task> <id>[,<id>,...]
         Delete notes or tasks by ID
-    j list <page|note|task> [due|status|done]
+    j ls <page|note|task> [due|status|done]
         List items with optional grouping
-    j show <note|task> <id>
-        Show specific note or task
     j <start|restart|waiting|done> task <id>[,<id>,...]
         Task status operations
     j done task <id>[,<id>,...] [note text]
