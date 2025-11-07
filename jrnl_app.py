@@ -961,12 +961,12 @@ def show_due():
 def show_task():
     with sqlite3.connect(DB_FILE) as conn:
         tasks = conn.execute(
-            "SELECT id,title,status,creation_date,due_date,completion_date,recur,pid FROM tasks WHERE status != 'done' ORDER BY creation_date ASC"
+            "SELECT id,title,status,creation_date,due_date,completion_date,recur,pid FROM tasks ORDER BY creation_date ASC"
         ).fetchall()
         
         # Get all notes for tasks that will be displayed
         notes = conn.execute(
-            "SELECT id,text,creation_date,task_id FROM notes WHERE task_id IN (SELECT id FROM tasks WHERE status != 'done') ORDER BY creation_date ASC,id ASC"
+            "SELECT id,text,creation_date,task_id FROM notes WHERE task_id IN (SELECT id FROM tasks) ORDER BY creation_date ASC,id ASC"
         ).fetchall()
 
     # Create a mapping of task_id to list of notes for that task
