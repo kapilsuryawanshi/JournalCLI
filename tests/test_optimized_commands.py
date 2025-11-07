@@ -239,7 +239,7 @@ def test_optimized_task_note_command():
         output = f.getvalue()
         
         # Should add a note to the task
-        assert f"Added note to 1 task(s)" in output
+        assert f"Added note with id" in output
         
         # Verify the note was added to the task
         with sqlite3.connect(DB_FILE) as conn:

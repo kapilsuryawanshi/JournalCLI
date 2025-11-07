@@ -40,7 +40,7 @@ def test_add_task_without_due_date():
     with redirect_stdout(f):
         jrnl_app.add_task(["Test task without due date"])
     output = f.getvalue()
-    assert "Added 1 task(s)" in output
+    assert "Added task with id" in output
     
     # Verify the task was added
     with sqlite3.connect(DB_FILE) as conn:
@@ -57,7 +57,7 @@ def test_add_task_with_due_date_keyword():
     with redirect_stdout(f):
         jrnl_app.add_task(["Test task @tomorrow"])
     output = f.getvalue()
-    assert "Added 1 task(s)" in output
+    assert "Added task with id" in output
     
     # Verify the task was added with tomorrow's date
     tomorrow = (datetime.now().date() + timedelta(days=1)).strftime("%Y-%m-%d")
@@ -73,7 +73,7 @@ def test_add_task_with_explicit_due_date():
     with redirect_stdout(f):
         jrnl_app.add_task(["Test task @2025-12-25"])
     output = f.getvalue()
-    assert "Added 1 task(s)" in output
+    assert "Added task with id" in output
     
     # Verify the task was added with the specified date
     with sqlite3.connect(DB_FILE) as conn:
@@ -88,7 +88,7 @@ def test_add_multiple_tasks():
     with redirect_stdout(f):
         jrnl_app.add_task(["Task 1", "Task 2 @tomorrow", "Task 3 @2025-12-25"])
     output = f.getvalue()
-    assert "Added 3 task(s)" in output
+    assert "Added tasks with IDs:" in output
     
     # Verify all tasks were added
     with sqlite3.connect(DB_FILE) as conn:
@@ -131,7 +131,7 @@ def test_add_note_to_specific_task():
     with redirect_stdout(f):
         jrnl_app.add_task(["Test task for note"])
     output = f.getvalue()
-    assert "Added 1 task(s)" in output
+    assert "Added task with id" in output
     
     # Get the task ID
     with sqlite3.connect(DB_FILE) as conn:
@@ -144,7 +144,7 @@ def test_add_note_to_specific_task():
     with redirect_stdout(f):
         jrnl_app.add_note([task_id], "Note for task 1")
     output = f.getvalue()
-    assert "Added note to 1 task(s)" in output
+    assert "Added note with id" in output
     
     # Verify the note was added and linked to the task
     with sqlite3.connect(DB_FILE) as conn:
@@ -172,7 +172,7 @@ def test_add_note_to_multiple_tasks():
     with redirect_stdout(f):
         jrnl_app.add_note(task_ids, "Note for tasks 1 and 2")
     output = f.getvalue()
-    assert "Added note to 2 task(s)" in output
+    assert "Added note with id" in output
     
     # Verify the note was added for each task
     with sqlite3.connect(DB_FILE) as conn:
@@ -190,7 +190,7 @@ def test_mark_task_as_done():
     with redirect_stdout(f):
         jrnl_app.add_task(["Test task"])
     output = f.getvalue()
-    assert "Added 1 task(s)" in output
+    assert "Added task with id" in output
     
     # Get the task ID
     with sqlite3.connect(DB_FILE) as conn:
@@ -218,7 +218,7 @@ def test_mark_task_as_doing():
     with redirect_stdout(f):
         jrnl_app.add_task(["Test task"])
     output = f.getvalue()
-    assert "Added 1 task(s)" in output
+    assert "Added task with id" in output
     
     # Get the task ID
     with sqlite3.connect(DB_FILE) as conn:
@@ -245,7 +245,7 @@ def test_mark_task_as_waiting():
     with redirect_stdout(f):
         jrnl_app.add_task(["Test task"])
     output = f.getvalue()
-    assert "Added 1 task(s)" in output
+    assert "Added task with id" in output
     
     # Get the task ID
     with sqlite3.connect(DB_FILE) as conn:
@@ -272,7 +272,7 @@ def test_mark_task_as_undone():
     with redirect_stdout(f):
         jrnl_app.add_task(["Test task"])
     output = f.getvalue()
-    assert "Added 1 task(s)" in output
+    assert "Added task with id" in output
     
     with sqlite3.connect(DB_FILE) as conn:
         task = conn.execute("SELECT id FROM tasks WHERE title='Test task'").fetchone()
@@ -312,7 +312,7 @@ def test_update_due_date_with_keyword():
     with redirect_stdout(f):
         jrnl_app.add_task(["Test task"])
     output = f.getvalue()
-    assert "Added 1 task(s)" in output
+    assert "Added task with id" in output
     
     # Get the task ID
     with sqlite3.connect(DB_FILE) as conn:
@@ -337,7 +337,7 @@ def test_update_due_date_with_explicit_date():
     with redirect_stdout(f):
         jrnl_app.add_task(["Test task"])
     output = f.getvalue()
-    assert "Added 1 task(s)" in output
+    assert "Added task with id" in output
     
     # Get the task ID
     with sqlite3.connect(DB_FILE) as conn:
@@ -418,7 +418,7 @@ def test_set_task_recur():
     with redirect_stdout(f):
         jrnl_app.add_task(["Test recurring task"])
     output = f.getvalue()
-    assert "Added 1 task(s)" in output
+    assert "Added task with id" in output
     
     # Get the task ID
     with sqlite3.connect(DB_FILE) as conn:
@@ -465,7 +465,7 @@ def test_edit_task_title():
     with redirect_stdout(f):
         jrnl_app.add_task(["Original task title"])
     output = f.getvalue()
-    assert "Added 1 task(s)" in output
+    assert "Added task with id" in output
     
     # Get the task ID
     with sqlite3.connect(DB_FILE) as conn:
@@ -513,7 +513,7 @@ def test_delete_task():
     with redirect_stdout(f):
         jrnl_app.add_task(["Task to delete"])
     output = f.getvalue()
-    assert "Added 1 task(s)" in output
+    assert "Added task with id" in output
     
     # Get the task ID
     with sqlite3.connect(DB_FILE) as conn:
@@ -526,7 +526,7 @@ def test_delete_task():
     with redirect_stdout(f):
         jrnl_app.add_note([task_id], "Note for task to delete")
     output = f.getvalue()
-    assert "Added note to 1 task(s)" in output
+    assert "Added note with id" in output
     
     # Verify task and note exist
     with sqlite3.connect(DB_FILE) as conn:
@@ -576,7 +576,7 @@ def test_delete_note():
         with redirect_stdout(f):
             jrnl_app.delete_note([note_id])
         output = f.getvalue()
-        assert "Deleted 1 note(s)" in output
+        assert "Deleted 1 note" in output
     
     # Verify the note was deleted
     with sqlite3.connect(DB_FILE) as conn:
@@ -591,8 +591,8 @@ def test_search_functionality():
         jrnl_app.add_task(["Searchable task"])
         jrnl_app.add_note([], "Searchable note")
     output = f.getvalue()
-    assert "Added 1 task(s)" in output
-    assert "Added standalone note" in output
+    assert "Added task with id" in output
+    assert "Added standalone note with id" in output
     
     # Test searching for the task
     grouped, tasks, notes = jrnl_app.search_tasks_and_notes("Searchable")
@@ -621,7 +621,7 @@ def test_format_task():
     with redirect_stdout(f):
         jrnl_app.add_task(["Test task"])
     output = f.getvalue()
-    assert "Added 1 task(s)" in output
+    assert "Added task with id" in output
     
     # Get the task
     with sqlite3.connect(DB_FILE) as conn:
@@ -659,7 +659,7 @@ def test_mark_task_as_done_with_note():
     with redirect_stdout(f):
         jrnl_app.add_task(["Test task"])
     output = f.getvalue()
-    assert "Added 1 task(s)" in output
+    assert "Added task with id" in output
     
     # Get the task ID
     with sqlite3.connect(DB_FILE) as conn:
@@ -693,8 +693,8 @@ def test_mark_multiple_tasks_as_done_with_note():
         jrnl_app.add_task(["Task 1"])
         jrnl_app.add_task(["Task 2"])
     output = f.getvalue()
-    # Since we're adding tasks individually, we'll get two "Added 1 task(s)" messages
-    assert output.count("Added 1 task(s)") == 2
+    # Since we're adding tasks individually, we'll get two "Added task with id" messages
+    assert output.count("Added task with id") == 2
     
     # Get the task IDs
     with sqlite3.connect(DB_FILE) as conn:
@@ -727,7 +727,7 @@ def test_recurring_task_creates_new_task_when_completed():
     with redirect_stdout(f):
         jrnl_app.add_task(["Recurring task"])
     output = f.getvalue()
-    assert "Added 1 task(s)" in output
+    assert "Added task with id" in output
     
     # Get the task ID
     with sqlite3.connect(DB_FILE) as conn:
@@ -766,7 +766,7 @@ def test_show_completed_tasks():
     with redirect_stdout(f):
         jrnl_app.add_task(["Completed task"])
     output = f.getvalue()
-    assert "Added 1 task(s)" in output
+    assert "Added task with id" in output
     
     with sqlite3.connect(DB_FILE) as conn:
         task = conn.execute("SELECT id FROM tasks WHERE title='Completed task'").fetchone()
@@ -797,7 +797,7 @@ def test_show_tasks_by_status():
         jrnl_app.add_task(["Doing task"])
         jrnl_app.add_task(["Waiting task"])
     output = f.getvalue()
-    assert "Added 1 task(s)" in output  # Should print this 3 times
+    assert "Added task with id" in output  # Should print this 3 times
     
     with sqlite3.connect(DB_FILE) as conn:
         tasks = conn.execute("SELECT id, title FROM tasks ORDER BY creation_date").fetchall()
@@ -827,7 +827,7 @@ def test_show_due_tasks():
         jrnl_app.add_task(["Today task @today"])  # Today
         jrnl_app.add_task(["Future task @2050-12-31"])  # Future date
     output = f.getvalue()
-    assert "Added 1 task(s)" in output  # Should print this 3 times
+    assert "Added task with id" in output  # Should print this 3 times
     
     # Show due tasks (capture the output to check if it works without error)
     f = StringIO()
@@ -848,7 +848,7 @@ def test_show_task_list():
         jrnl_app.add_task(["Unfinished task"])
         jrnl_app.add_task(["Finished task"])
     output = f.getvalue()
-    assert "Added 1 task(s)" in output  # Should print this 2 times
+    assert "Added task with id" in output  # Should print this 2 times
     
     with sqlite3.connect(DB_FILE) as conn:
         tasks = conn.execute("SELECT id, title FROM tasks ORDER BY creation_date").fetchall()
@@ -875,7 +875,7 @@ def test_show_notes():
     with redirect_stdout(f):
         jrnl_app.add_task(["Test task for notes"])
     output = f.getvalue()
-    assert "Added 1 task(s)" in output
+    assert "Added task with id" in output
     
     # Get the task ID
     with sqlite3.connect(DB_FILE) as conn:

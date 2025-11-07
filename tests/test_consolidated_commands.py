@@ -112,7 +112,7 @@ def test_consolidated_new_task_basic():
             jrnl_app.main()
         output = f.getvalue()
         
-        assert "Added 1 task(s)" in output
+        assert "Added task with id" in output
         
         # Verify the task was added with today's date
         with sqlite3.connect(DB_FILE) as conn:
@@ -137,7 +137,7 @@ def test_consolidated_new_task_with_due_date():
             jrnl_app.main()
         output = f.getvalue()
         
-        assert "Added 1 task(s)" in output
+        assert "Added task with id" in output
         
         # Verify the task was added with tomorrow's date
         tomorrow = (datetime.now().date() + timedelta(days=1)).strftime("%Y-%m-%d")
@@ -161,7 +161,7 @@ def test_consolidated_new_task_with_explicit_due_date():
             jrnl_app.main()
         output = f.getvalue()
         
-        assert "Added 1 task(s)" in output
+        assert "Added task with id" in output
         
         # Verify the task was added with the specified date
         with sqlite3.connect(DB_FILE) as conn:
@@ -184,7 +184,7 @@ def test_consolidated_new_task_with_recurrence():
             jrnl_app.main()
         output = f.getvalue()
         
-        assert "Added 1 task(s)" in output
+        assert "Added task with id" in output
         
         # Verify the task was added with the recurrence pattern
         with sqlite3.connect(DB_FILE) as conn:
@@ -207,7 +207,7 @@ def test_consolidated_new_task_with_due_date_and_recurrence():
             jrnl_app.main()
         output = f.getvalue()
         
-        assert "Added 1 task(s)" in output
+        assert "Added task with id" in output
         
         # Verify the task was added with both due date and recurrence
         tomorrow = (datetime.now().date() + timedelta(days=1)).strftime("%Y-%m-%d")
@@ -257,7 +257,7 @@ def test_new_task_command_works():
         output = f.getvalue()
         
         # The new command should work and add a task
-        assert "Added 1 task(s)" in output
+        assert "Added task with id" in output
         
         # Verify the task was added with today's date
         with sqlite3.connect(DB_FILE) as conn:

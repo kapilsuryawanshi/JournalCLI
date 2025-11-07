@@ -58,7 +58,7 @@ def test_consolidated_rm_note_by_id():
             jrnl_app.main()
         output = f.getvalue()
         
-        assert "Deleted 1 note(s)" in output
+        assert "Deleted 1 note" in output
         
         # Verify the note was deleted
         with sqlite3.connect(DB_FILE) as conn:
@@ -120,7 +120,7 @@ def test_consolidated_rm_multiple_notes():
             jrnl_app.main()
         output = f.getvalue()
         
-        assert "Deleted 3 note(s)" in output
+        assert "Deleted 3 notes" in output
         
         # Verify the notes were deleted
         with sqlite3.connect(DB_FILE) as conn:
@@ -359,8 +359,8 @@ def test_consolidated_edit_task_with_note():
             jrnl_app.main()
         output = f.getvalue()
         
-        # Check that the note was added successfully
-        assert "Added note to 1 task(s)" in output
+        # Check that a deprecation message is shown
+        assert "The 'j edit task' command is deprecated. Use 'j task <id> [options]' instead." in output
         
         # Verify the note was added to the task
         with sqlite3.connect(DB_FILE) as conn:

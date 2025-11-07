@@ -377,7 +377,7 @@ def display_search_results(grouped):
 
 def add_task(texts):
     today = datetime.now().date().strftime("%Y-%m-%d")
-    added_count = 0
+    added_task_ids = []
     with sqlite3.connect(DB_FILE) as conn:
         for raw in texts:
             raw = raw.strip()
@@ -387,13 +387,20 @@ def add_task(texts):
             else:
                 title = raw
                 due = datetime.now().date()
-            conn.execute(
+            cursor = conn.execute(
                 "INSERT INTO tasks (title,status,creation_date,due_date) VALUES (?,?,?,?)",
                 (title.strip(), "todo", today, due.strftime("%Y-%m-%d"))
             )
-            added_count += 1
-    if added_count > 0:
-        print(f"Added {added_count} task(s)")
+            task_id = cursor.lastrowid
+            added_task_ids.append(task_id)
+    
+    if added_task_ids:
+        if len(added_task_ids) == 1:
+            print(f"Added task with id {added_task_ids[0]}")
+        else:
+            print(f"Added tasks with IDs: {', '.join(map(str, added_task_ids))}")
+    
+    return added_task_ids
 
 def add_note_under_note(parent_note_id, text):
     """Add a note under another specific note"""
@@ -407,45 +414,60 @@ def add_note_under_note(parent_note_id, text):
     # Add the note with parent_note_id
     today = datetime.now().date().strftime("%Y-%m-%d")
     with sqlite3.connect(DB_FILE) as conn:
-        conn.execute(
+        cursor = conn.execute(
             "INSERT INTO notes (text,creation_date,parent_note_id) VALUES (?,?,?)",
             (text, today, parent_note_id)
         )
-    print(f"Added note under parent note {parent_note_id}")
-    return True
+        note_id = cursor.lastrowid
+    print(f"Added note with id {note_id} under parent note {parent_note_id}")
+    return note_id
 
 def add_note(task_ids, text, parent_note_id=None):
     today = datetime.now().date().strftime("%Y-%m-%d")
-    added_count = 0
+    added_note_ids = []
     with sqlite3.connect(DB_FILE) as conn:
         if not task_ids and parent_note_id is None:
-            conn.execute(
+            cursor = conn.execute(
                 "INSERT INTO notes (text,creation_date) VALUES (?,?)",
                 (text, today)
             )
-            added_count += 1
+            note_id = cursor.lastrowid
+            added_note_ids.append(note_id)
         elif parent_note_id is not None:
             # Add note under parent note
-            conn.execute(
+            cursor = conn.execute(
                 "INSERT INTO notes (text,creation_date,parent_note_id) VALUES (?,?,?)",
                 (text, today, parent_note_id)
             )
-            added_count += 1
+            note_id = cursor.lastrowid
+            added_note_ids.append(note_id)
         else:
             # Add note under tasks
             for tid in task_ids:
-                conn.execute(
+                cursor = conn.execute(
                     "INSERT INTO notes (text,creation_date,task_id) VALUES (?,?,?)",
                     (text, today, tid)
                 )
-                added_count += 1
-    if added_count > 0:
-        if parent_note_id is not None:
-            print(f"Added note under parent note {parent_note_id}")
-        elif task_ids:
-            print(f"Added note to {added_count} task(s)")
+                note_id = cursor.lastrowid
+                added_note_ids.append(note_id)
+    
+    if added_note_ids:
+        if len(added_note_ids) == 1:
+            note_id = added_note_ids[0]
+            if parent_note_id is not None:
+                print(f"Added note with id {note_id} under parent note {parent_note_id}")
+            elif task_ids:
+                print(f"Added note with id {note_id} to task {task_ids[0]}")
+            else:
+                print(f"Added standalone note with id {note_id}")
         else:
-            print("Added standalone note")
+            # Multiple notes added to multiple tasks
+            if task_ids:
+                print(f"Added notes with IDs {', '.join(map(str, added_note_ids))} to tasks {', '.join(map(str, task_ids))}")
+            else:
+                print(f"Added notes with IDs: {', '.join(map(str, added_note_ids))}")
+    
+    return added_note_ids
 
 def update_task_status(task_ids, status, note_text=None):
     updated_count = 0
@@ -481,7 +503,7 @@ def update_task_status(task_ids, status, note_text=None):
                         "INSERT INTO tasks (title,status,creation_date,due_date,recur) VALUES (?,?,?,?,?)",
                         (title, "todo", today, new_due_date, recur)
                     ).lastrowid
-                    print(f"Created recurring task for '{title}'")
+                    print(f"Created recurring task '{title}' with id {new_parent_id}")
                     
                     # Recursively recreate the entire child task structure
                     def recreate_task_hierarchy(old_parent_id, new_parent_id, parent_due_date):
@@ -511,7 +533,7 @@ def update_task_status(task_ids, status, note_text=None):
                     
                     total_recreated = recreate_task_hierarchy(old_task_id, new_parent_id, new_due_date)
                     if total_recreated > 0:
-                        print(f"  Recreated {total_recreated} child task(s) for the recurring task (including all subtasks)")
+                        print(f"  Recreated {total_recreated} child task(s) for the recurring task {new_parent_id} (including all subtasks)")
                 
                 # Set completion date for the original task
                 conn.execute(
@@ -541,7 +563,10 @@ def update_task_status(task_ids, status, note_text=None):
                 updated_count += 1
     if updated_count > 0:
         status_display = "undone" if status == "todo" else status
-        print(f"Updated {updated_count} task(s) to {status_display}")
+        if updated_count == 1:
+            print(f"Updated task {task_ids[0]} to {status_display}")
+        else:
+            print(f"Updated {updated_count} tasks to {status_display}")
     elif status == "done" and task_ids:
         print(f"No tasks were updated to done (likely due to incomplete child tasks)")
 
@@ -695,7 +720,10 @@ def delete_task(task_ids):
                 deleted_count += 1
     
     if deleted_count > 0:
-        print(f"Deleted {deleted_count} task(s) (including children)")
+        if deleted_count == 1:
+            print(f"Deleted 1 task (including children if any)")
+        else:
+            print(f"Deleted {deleted_count} tasks (including children if any)")
     else:
         print("No tasks were deleted")
 
@@ -711,12 +739,13 @@ def add_task_under_note(note_id, text):
     # Add the task with parent_note_id
     today = datetime.now().date().strftime("%Y-%m-%d")
     with sqlite3.connect(DB_FILE) as conn:
-        conn.execute(
+        cursor = conn.execute(
             "INSERT INTO tasks (title,status,creation_date,due_date,parent_note_id) VALUES (?,?,?,?,?)",
             (text, "todo", today, today, note_id)
         )
-    print(f"Added task to note {note_id}")
-    return True
+        task_id = cursor.lastrowid
+    print(f"Added task with id {task_id} to note {note_id}")
+    return task_id
 
 def delete_note(note_ids):
     """Delete notes from the database"""
@@ -743,7 +772,10 @@ def delete_note(note_ids):
             if cursor.rowcount > 0:
                 deleted_count += 1
     if deleted_count > 0:
-        print(f"Deleted {deleted_count} note(s)")
+        if deleted_count == 1:
+            print(f"Deleted 1 note")
+        else:
+            print(f"Deleted {deleted_count} notes")
     else:
         print("No notes were deleted")
 
@@ -960,18 +992,22 @@ def show_task():
 
 def show_note():
     with sqlite3.connect(DB_FILE) as conn:
-        # get notes with their tasks (if any)
-        notes = conn.execute("""
+        # Get all root notes (notes that have no parent note and are not attached to any task) with their tasks (if any)
+        # According to the requirement: Root notes are the ones which do not have parent task and parent note
+        # This means notes that are not children of another note (parent_note_id IS NULL)
+        # AND notes that are not attached to any task (task_id IS NULL)
+        root_notes = conn.execute("""
             SELECT n.id, n.text, n.creation_date, n.task_id, t.title
             FROM notes n
             LEFT JOIN tasks t ON n.task_id = t.id
+            WHERE n.parent_note_id IS NULL AND n.task_id IS NULL
             ORDER BY n.creation_date ASC, n.id ASC
         """).fetchall()
 
-    # Group notes by creation_date
-    grouped = defaultdict(list)
-    for n in notes:
-        grouped[n[2]].append(n)  # n[2] is creation_date
+        # Group root notes by creation_date
+        grouped = defaultdict(list)
+        for n in root_notes:
+            grouped[n[2]].append(n)  # n[2] is creation_date
 
     for day in sorted(grouped.keys()):
         print()
@@ -982,9 +1018,168 @@ def show_note():
                 print(Fore.YELLOW + f"\t> {text} (id: {nid}) ({creation_date}) (for task: {task_id}. {task_title})" + Style.RESET_ALL)
             else:
                 print(Fore.YELLOW + f"\t> {text} (id: {nid}) ({creation_date})" + Style.RESET_ALL)
+            
+            # Print children of this root note (recursive hierarchy)
+            print_note_children(conn, nid, "\t\t")
+
+def print_note_children(conn, parent_note_id, indent):
+    """Helper function to recursively print child notes and tasks of a note"""
+    # Get child notes of this note
+    child_notes = conn.execute("""
+        SELECT n.id, n.text, n.creation_date, n.task_id, t.title
+        FROM notes n
+        LEFT JOIN tasks t ON n.task_id = t.id
+        WHERE n.parent_note_id = ?
+        ORDER BY n.creation_date ASC, n.id ASC
+    """, (parent_note_id,)).fetchall()
+    
+    # Print child notes with current indentation
+    for child_note in child_notes:
+        nid, text, creation_date, task_id, task_title = child_note
+        if task_id:
+            print(Fore.YELLOW + f"{indent}> {text} (id: {nid}) ({creation_date}) (for task: {task_id}. {task_title})" + Style.RESET_ALL)
+        else:
+            print(Fore.YELLOW + f"{indent}> {text} (id: {nid}) ({creation_date})" + Style.RESET_ALL)
+        
+        # Recursively print children of this child note (grandchildren, etc.)
+        print_note_children(conn, nid, indent + "\t")
+    
+    # Get child tasks of this note
+    child_tasks = conn.execute("""
+        SELECT id, title, status, creation_date, due_date, completion_date, recur, pid
+        FROM tasks
+        WHERE parent_note_id = ?
+        ORDER BY creation_date ASC, id ASC
+    """, (parent_note_id,)).fetchall()
+    
+    # Print child tasks with current indentation
+    for child_task in child_tasks:
+        tid, title, status, creation_date, due_date, completion_date, recur, pid = child_task
+        checkbox = "[x]" if status == "done" else "[ ]"
+
+        # Color based on status
+        if status == "doing":
+            task_text = "\t" + Back.YELLOW + Fore.BLACK + f"{checkbox} {title} (id:{tid})" + Style.RESET_ALL
+        elif status == "waiting":
+            task_text = "\t" + Back.LIGHTBLACK_EX + Fore.WHITE + f"{checkbox} {title} (id:{tid})" + Style.RESET_ALL
+        elif status == "done":
+            task_text = "\t" + Fore.GREEN + f"{checkbox} {title} (id:{tid})" + Style.RESET_ALL
+        else:  # todo
+            task_text = "\t" + f"{checkbox} {title}  (id:{tid})"
+
+        # Show recur pattern if it exists
+        if recur:
+            task_text += f" (recur: {recur})"
+
+        # Show due date
+        due = datetime.strptime(due_date, "%Y-%m-%d").date()
+        today = datetime.now().date()
+        if status != "done":
+            if due < today:
+                task_text += Fore.RED + f" (due: {format_date_with_day(due_date)})"
+            elif due == today:
+                task_text += Fore.CYAN + f" (due: {format_date_with_day(due_date)})"
+            else:
+                task_text += f" (due: {format_date_with_day(due_date)})"
+
+        print(Fore.YELLOW + f"{indent}{task_text}" + Style.RESET_ALL)
+        
+        # Also display any notes attached to this child task
+        task_notes = conn.execute("""
+            SELECT n.id, n.text, n.creation_date, n.task_id, t.title
+            FROM notes n
+            LEFT JOIN tasks t ON n.task_id = t.id
+            WHERE n.task_id = ?
+            ORDER BY n.creation_date ASC, n.id ASC
+        """, (tid,)).fetchall()
+        
+        for task_note in task_notes:
+            task_note_id, task_note_text, task_note_date, task_note_task_id, task_note_task_title = task_note
+            if task_note_task_id:
+                print(Fore.YELLOW + f"{indent}\t> {task_note_text} (id:{task_note_id}) ({task_note_date}) (for task: {task_note_task_id}. {task_note_task_title})" + Style.RESET_ALL)
+            else:
+                print(Fore.YELLOW + f"{indent}\t> {task_note_text} (id:{task_note_id}) ({task_note_date})" + Style.RESET_ALL)
+
+def print_note_children(conn, parent_note_id, indent):
+    """Helper function to recursively print child notes and tasks of a note"""
+    # Get child notes of this note
+    child_notes = conn.execute("""
+        SELECT n.id, n.text, n.creation_date, n.task_id, t.title
+        FROM notes n
+        LEFT JOIN tasks t ON n.task_id = t.id
+        WHERE n.parent_note_id = ?
+        ORDER BY n.creation_date ASC, n.id ASC
+    """, (parent_note_id,)).fetchall()
+    
+    # Print child notes with current indentation
+    for child_note in child_notes:
+        nid, text, creation_date, task_id, task_title = child_note
+        if task_id:
+            print(Fore.YELLOW + f"{indent}> {text} (id: {nid}) ({creation_date}) (for task: {task_id}. {task_title})" + Style.RESET_ALL)
+        else:
+            print(Fore.YELLOW + f"{indent}> {text} (id: {nid}) ({creation_date})" + Style.RESET_ALL)
+        
+        # Recursively print children of this child note (grandchildren, etc.)
+        print_note_children(conn, nid, indent + "\t")
+    
+    # Get child tasks of this note
+    child_tasks = conn.execute("""
+        SELECT id, title, status, creation_date, due_date, completion_date, recur, pid
+        FROM tasks
+        WHERE parent_note_id = ?
+        ORDER BY creation_date ASC, id ASC
+    """, (parent_note_id,)).fetchall()
+    
+    # Print child tasks with current indentation
+    for child_task in child_tasks:
+        tid, title, status, creation_date, due_date, completion_date, recur, pid = child_task
+        checkbox = "[x]" if status == "done" else "[ ]"
+
+        # Color based on status
+        if status == "doing":
+            task_text = "\t" + Back.YELLOW + Fore.BLACK + f"{checkbox} {title} (id:{tid})" + Style.RESET_ALL
+        elif status == "waiting":
+            task_text = "\t" + Back.LIGHTBLACK_EX + Fore.WHITE + f"{checkbox} {title} (id:{tid})" + Style.RESET_ALL
+        elif status == "done":
+            task_text = "\t" + Fore.GREEN + f"{checkbox} {title} (id:{tid})" + Style.RESET_ALL
+        else:  # todo
+            task_text = "\t" + f"{checkbox} {title}  (id:{tid})"
+
+        # Show recur pattern if it exists
+        if recur:
+            task_text += f" (recur: {recur})"
+
+        # Show due date
+        due = datetime.strptime(due_date, "%Y-%m-%d").date()
+        today = datetime.now().date()
+        if status != "done":
+            if due < today:
+                task_text += Fore.RED + f" (due: {format_date_with_day(due_date)})"
+            elif due == today:
+                task_text += Fore.CYAN + f" (due: {format_date_with_day(due_date)})"
+            else:
+                task_text += f" (due: {format_date_with_day(due_date)})"
+
+        print(Fore.YELLOW + f"{indent}{task_text}" + Style.RESET_ALL)
+        
+        # Also display any notes attached to this child task
+        task_notes = conn.execute("""
+            SELECT n.id, n.text, n.creation_date, n.task_id, t.title
+            FROM notes n
+            LEFT JOIN tasks t ON n.task_id = t.id
+            WHERE n.task_id = ?
+            ORDER BY n.creation_date ASC, n.id ASC
+        """, (tid,)).fetchall()
+        
+        for task_note in task_notes:
+            task_note_id, task_note_text, task_note_date, task_note_task_id, task_note_task_title = task_note
+            if task_note_task_id:
+                print(Fore.YELLOW + f"{indent}\t> {task_note_text} (id:{task_note_id}) ({task_note_date}) (for task: {task_note_task_id}. {task_note_task_title})" + Style.RESET_ALL)
+            else:
+                print(Fore.YELLOW + f"{indent}\t> {task_note_text} (id:{task_note_id}) ({task_note_date})" + Style.RESET_ALL)
 
 def show_note_details(note_id):
-    """Show details of a specific note, including linked notes"""
+    """Show details of a specific note, including child notes and tasks, and linked notes"""
     with sqlite3.connect(DB_FILE) as conn:
         # Get the specific note
         note = conn.execute("""
@@ -1005,6 +1200,80 @@ def show_note_details(note_id):
             print(Fore.YELLOW + f"- {text} (id:{nid}) ({creation_date}) (for task: {task_id}. {task_title})" + Style.RESET_ALL)
         else:
             print(Fore.YELLOW + f"- {text} (id:{nid}) ({creation_date})" + Style.RESET_ALL)
+        
+        # Get child notes (notes that have this note as parent)
+        child_notes = conn.execute("""
+            SELECT id, text, creation_date, task_id
+            FROM notes
+            WHERE parent_note_id = ?
+            ORDER BY creation_date ASC, id ASC
+        """, (note_id,)).fetchall()
+        
+        # Get child tasks (tasks that have this note as parent)
+        child_tasks = conn.execute("""
+            SELECT id, title, status, creation_date, due_date, completion_date, recur, pid
+            FROM tasks
+            WHERE parent_note_id = ?
+            ORDER BY creation_date ASC, id ASC
+        """, (note_id,)).fetchall()
+        
+        # Print child notes and tasks
+        has_children = len(child_notes) > 0 or len(child_tasks) > 0
+        if has_children:
+            # Print child notes first
+            for child_note in child_notes:
+                child_note_id, child_note_text, child_creation_date, child_task_id = child_note
+                if child_task_id:
+                    print(Fore.YELLOW + f"\t> {child_note_text} (id:{child_note_id}) ({child_creation_date}) (for task: {child_task_id})" + Style.RESET_ALL)
+                else:
+                    print(Fore.YELLOW + f"\t> {child_note_text} (id:{child_note_id}) ({child_creation_date})" + Style.RESET_ALL)
+                
+                # Recursively display children of this child note (if any)
+                show_child_note_details(conn, child_note_id, "\t\t")
+            
+            # Print child tasks
+            for child_task in child_tasks:
+                tid, title, status, creation_date, due_date, completion_date, recur, pid = child_task
+                checkbox = "[x]" if status == "done" else "[ ]"
+
+                # Color based on status
+                if status == "doing":
+                    task_text = Back.YELLOW + Fore.BLACK + f"{checkbox} {title} (id:{tid})" + Style.RESET_ALL
+                elif status == "waiting":
+                    task_text = Back.LIGHTBLACK_EX + Fore.WHITE + f"{checkbox} {title} (id:{tid})" + Style.RESET_ALL
+                elif status == "done":
+                    task_text = Fore.GREEN + f"{checkbox} {title} (id:{tid})" + Style.RESET_ALL
+                else:  # todo
+                    task_text = f"{checkbox} {title}  (id:{tid})"
+
+                # Show recur pattern if it exists
+                if recur:
+                    task_text += f" (recur: {recur})"
+
+                # Show due date
+                due = datetime.strptime(due_date, "%Y-%m-%d").date()
+                today = datetime.now().date()
+                if status != "done":
+                    if due < today:
+                        task_text += Fore.RED + f" (due: {format_date_with_day(due_date)})"
+                    elif due == today:
+                        task_text += Fore.CYAN + f" (due: {format_date_with_day(due_date)})"
+                    else:
+                        task_text += f" (due: {format_date_with_day(due_date)})"
+
+                print(Fore.YELLOW + f"\t{task_text}" + Style.RESET_ALL)
+                
+                # Also display any notes attached to this child task
+                task_notes = conn.execute("""
+                    SELECT id, text, creation_date, task_id
+                    FROM notes
+                    WHERE task_id = ?
+                    ORDER BY creation_date ASC, id ASC
+                """, (tid,)).fetchall()
+                
+                for task_note in task_notes:
+                    task_note_id, task_note_text, task_note_date, _ = task_note
+                    print(Fore.YELLOW + f"\t\t> {task_note_text} (id:{task_note_id}) ({task_note_date})" + Style.RESET_ALL)
         
         # Get linked notes with their task information and creation dates
         linked_notes = conn.execute("""
@@ -1044,7 +1313,29 @@ def show_note_details(note_id):
                 else:
                     print(Fore.CYAN + f"  - {other_note_text} (id:{other_note_id}) ({other_creation_date})" + Style.RESET_ALL)
         else:
-            print(Fore.CYAN + f"\nNo linked notes found." + Style.RESET_ALL)
+            if not has_children:
+                print(Fore.CYAN + f"\nNo linked notes found." + Style.RESET_ALL)
+
+def show_child_note_details(conn, note_id, indent_prefix):
+    """Helper function to recursively display child notes of a note"""
+    # Get child notes of this note
+    child_notes = conn.execute("""
+        SELECT id, text, creation_date, task_id
+        FROM notes
+        WHERE parent_note_id = ?
+        ORDER BY creation_date ASC, id ASC
+    """, (note_id,)).fetchall()
+    
+    # Print child notes with additional indentation
+    for child_note in child_notes:
+        child_note_id, child_note_text, child_creation_date, child_task_id = child_note
+        if child_task_id:
+            print(Fore.YELLOW + f"{indent_prefix}> {child_note_text} (id:{child_note_id}) ({child_creation_date}) (for task: {child_task_id})" + Style.RESET_ALL)
+        else:
+            print(Fore.YELLOW + f"{indent_prefix}> {child_note_text} (id:{child_note_id}) ({child_creation_date})" + Style.RESET_ALL)
+        
+        # Recursively display children of this child note (if any)
+        show_child_note_details(conn, child_note_id, indent_prefix + "\t")
 
 def show_completed_tasks():
     with sqlite3.connect(DB_FILE) as conn:
@@ -1354,18 +1645,14 @@ def main():
                                 return
                     
                     # Add the note with parent if specified
-                    add_note([], text, parent_note_id)
+                    note_ids = add_note([], text, parent_note_id)
                     
                     # Then create links if specified
-                    if link_ids:
-                        # Get the ID of the newly added note
-                        with sqlite3.connect(DB_FILE) as conn:
-                            new_note_id = conn.execute("SELECT id FROM notes WHERE text=? ORDER BY id DESC LIMIT 1", (text,)).fetchone()
-                        
-                        if new_note_id:
-                            note_id = new_note_id[0]
-                            for link_id in link_ids:
-                                link_notes(note_id, link_id)
+                    if link_ids and note_ids:
+                        # Use the note ID from the add_note function
+                        note_id = note_ids[0]  # Since we're adding one note, get the first ID
+                        for link_id in link_ids:
+                            link_notes(note_id, link_id)
                 else:
                     print("Error: Please provide note text")
             elif sub_cmd == "task":
@@ -1433,7 +1720,7 @@ def main():
                                 "INSERT INTO tasks (title,status,creation_date,due_date,recur,pid) VALUES (?,?,?,?,?,?)",
                                 (text, "todo", today, due_date.strftime("%Y-%m-%d"), recur_pattern, parent_id)
                             ).lastrowid
-                            print(f"Added 1 task(s)")
+                            print(f"Added task with id {task_id}")
                     else:
                         # Add task without due date (default to today)
                         if recur_pattern:  # Need to call add_task with proper due date handling
@@ -1445,16 +1732,17 @@ def main():
                                     "INSERT INTO tasks (title,status,creation_date,due_date,recur,pid) VALUES (?,?,?,?,?,?)",
                                     (text, "todo", formatted_today, formatted_today, recur_pattern, parent_id)
                                 ).lastrowid
-                            print(f"Added 1 task(s)")
+                            print(f"Added task with id {task_id}")
                         else:
                             # Call original add_task function for simple tasks but with parent ID
                             today = datetime.now().date().strftime("%Y-%m-%d")
                             with sqlite3.connect(DB_FILE) as conn:
-                                conn.execute(
+                                cursor = conn.execute(
                                     "INSERT INTO tasks (title,status,creation_date,due_date,pid) VALUES (?,?,?,?,?)",
                                     (text, "todo", today, today, parent_id)
                                 )
-                            print(f"Added 1 task(s)")
+                                task_id = cursor.lastrowid
+                            print(f"Added task with id {task_id}")
                 else:
                     print("Error: Please provide task text")
     
