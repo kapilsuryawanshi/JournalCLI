@@ -1185,9 +1185,9 @@ def print_note_children(conn, parent_note_id, indent):
         for task_note in task_notes:
             task_note_id, task_note_text, task_note_date, task_note_task_id, task_note_task_title = task_note
             if task_note_task_id:
-                print(Fore.YELLOW + f"{indent}\t> {task_note_text} (id:{task_note_id}) ({task_note_date}) (for task: {task_note_task_id}. {task_note_task_title})" + Style.RESET_ALL)
+                print(Fore.YELLOW + f"{indent}\t\t> {task_note_text} (id:{task_note_id}) ({task_note_date}) (for task: {task_note_task_id}. {task_note_task_title})" + Style.RESET_ALL)
             else:
-                print(Fore.YELLOW + f"{indent}\t> {task_note_text} (id:{task_note_id}) ({task_note_date})" + Style.RESET_ALL)
+                print(Fore.YELLOW + f"{indent}\t\t> {task_note_text} (id:{task_note_id}) ({task_note_date})" + Style.RESET_ALL)
 
 def print_note_children(conn, parent_note_id, indent):
     """Helper function to recursively print child notes and tasks of a note"""
@@ -1263,9 +1263,9 @@ def print_note_children(conn, parent_note_id, indent):
         for task_note in task_notes:
             task_note_id, task_note_text, task_note_date, task_note_task_id, task_note_task_title = task_note
             if task_note_task_id:
-                print(Fore.YELLOW + f"{indent}\t> {task_note_text} (id:{task_note_id}) ({task_note_date}) (for task: {task_note_task_id}. {task_note_task_title})" + Style.RESET_ALL)
+                print(Fore.YELLOW + f"{indent}\t\t> {task_note_text} (id:{task_note_id}) ({task_note_date}) (for task: {task_note_task_id}. {task_note_task_title})" + Style.RESET_ALL)
             else:
-                print(Fore.YELLOW + f"{indent}\t> {task_note_text} (id:{task_note_id}) ({task_note_date})" + Style.RESET_ALL)
+                print(Fore.YELLOW + f"{indent}\t\t> {task_note_text} (id:{task_note_id}) ({task_note_date})" + Style.RESET_ALL)
 
 def show_note_details(note_id):
     """Show details of a specific note, including child notes and tasks, and linked notes"""
