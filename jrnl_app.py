@@ -847,10 +847,42 @@ def unlink_notes(note1_id, note2_id):
 
 def show_journal():
     with sqlite3.connect(DB_FILE) as conn:
-        # get tasks with pid column
-        tasks = conn.execute(
-            "SELECT id,title,status,creation_date,due_date,completion_date,recur,pid FROM tasks ORDER BY creation_date ASC,id ASC"
+        # First, find all completed root tasks
+        completed_roots = conn.execute("""
+            SELECT id FROM tasks 
+            WHERE status = 'done' AND pid IS NULL AND parent_note_id IS NULL
+        """).fetchall()
+        
+        completed_root_ids = [str(row[0]) for row in completed_roots]
+        
+        # Find all descendants of these completed roots using recursive CTE
+        if completed_root_ids:
+            exclude_query = """
+                WITH RECURSIVE task_descendants AS (
+                    -- Base case: the completed root tasks themselves
+                    SELECT id FROM tasks WHERE id IN ({})
+                    
+                    UNION ALL
+                    -- Recursive case: child tasks of tasks in the descendants
+                    SELECT t.id 
+                    FROM tasks t
+                    JOIN task_descendants td ON t.pid = td.id
+                )
+                SELECT id FROM task_descendants
+            """.format(",".join("?" * len(completed_root_ids)))
+            
+            excluded_task_ids = conn.execute(exclude_query, completed_root_ids).fetchall()
+            excluded_ids_set = set(row[0] for row in excluded_task_ids)
+        else:
+            excluded_ids_set = set()
+        
+        # Get all tasks except those that are descendants of completed root tasks
+        all_tasks = conn.execute(
+            "SELECT id,title,status,creation_date,due_date,completion_date,recur,pid FROM tasks ORDER BY creation_date ASC, id ASC"
         ).fetchall()
+        
+        # Filter out tasks that are descendants of completed root tasks
+        tasks = [task for task in all_tasks if task[0] not in excluded_ids_set]
 
         # get notes
         notes = conn.execute(
@@ -887,14 +919,54 @@ def show_journal():
 
 def show_due():
     with sqlite3.connect(DB_FILE) as conn:
-        tasks = conn.execute(
+        # First, find all completed root tasks
+        completed_roots = conn.execute("""
+            SELECT id FROM tasks 
+            WHERE status = 'done' AND pid IS NULL AND parent_note_id IS NULL
+        """).fetchall()
+        
+        completed_root_ids = [str(row[0]) for row in completed_roots]
+        
+        # Find all descendants of these completed roots using recursive CTE
+        if completed_root_ids:
+            exclude_query = """
+                WITH RECURSIVE task_descendants AS (
+                    -- Base case: the completed root tasks themselves
+                    SELECT id FROM tasks WHERE id IN ({})
+                    
+                    UNION ALL
+                    -- Recursive case: child tasks of tasks in the descendants
+                    SELECT t.id 
+                    FROM tasks t
+                    JOIN task_descendants td ON t.pid = td.id
+                )
+                SELECT id FROM task_descendants
+            """.format(",".join("?" * len(completed_root_ids)))
+            
+            excluded_task_ids = conn.execute(exclude_query, completed_root_ids).fetchall()
+            excluded_ids_set = set(row[0] for row in excluded_task_ids)
+        else:
+            excluded_ids_set = set()
+        
+        # Get all tasks except those that are descendants of completed root tasks
+        all_tasks = conn.execute(
             "SELECT id,title,status,creation_date,due_date,completion_date,recur,pid FROM tasks ORDER BY id ASC"
         ).fetchall()
         
+        # Filter out tasks that are descendants of completed root tasks
+        tasks = [task for task in all_tasks if task[0] not in excluded_ids_set]
+
         # Get all notes for tasks that will be displayed
-        notes = conn.execute(
-            "SELECT id,text,creation_date,task_id FROM notes WHERE task_id IN (SELECT id FROM tasks) ORDER BY creation_date ASC,id ASC"
-        ).fetchall()
+        task_ids = [str(task[0]) for task in tasks]
+        if task_ids:
+            notes_query = """
+                SELECT id,text,creation_date,task_id FROM notes 
+                WHERE task_id IN ({}) 
+                ORDER BY creation_date ASC,id ASC
+            """.format(",".join("?" * len(task_ids)))
+            notes = conn.execute(notes_query, task_ids).fetchall()
+        else:
+            notes = []
 
     # Create a mapping of task_id to list of notes for that task
     task_notes = defaultdict(list)
@@ -960,35 +1032,52 @@ def show_due():
 
 def show_task():
     with sqlite3.connect(DB_FILE) as conn:
-        tasks = conn.execute(
-            "SELECT id,title,status,creation_date,due_date,completion_date,recur,pid FROM tasks ORDER BY creation_date ASC"
+        # Get only incomplete root tasks (tasks that have no parent and are not done)
+        root_tasks = conn.execute(
+            "SELECT id,title,status,creation_date,due_date,completion_date,recur,pid FROM tasks WHERE status != 'done' AND pid IS NULL AND parent_note_id IS NULL ORDER BY creation_date ASC"
         ).fetchall()
         
-        # Get all notes for tasks that will be displayed
-        notes = conn.execute(
-            "SELECT id,text,creation_date,task_id FROM notes WHERE task_id IN (SELECT id FROM tasks) ORDER BY creation_date ASC,id ASC"
-        ).fetchall()
-
-    # Create a mapping of task_id to list of notes for that task
-    task_notes = defaultdict(list)
-    for note in notes:
-        task_notes[note[3]].append(note)  # note[3] is task_id
-
-    # Group tasks by creation_date
-    grouped = defaultdict(list)
-    for t in tasks:
-        grouped[t[3]].append(t)  # t[3] is creation_date
+        # Group root tasks by creation_date
+        grouped = defaultdict(list)
+        for t in root_tasks:
+            grouped[t[3]].append(t)  # t[3] is creation_date
 
     for day in sorted(grouped.keys()):
         print()
         print(format_date_with_day(day))
         
-        # Build and print task tree for this day
-        day_tasks = grouped[day]
-        root_tasks, children, task_dict = build_task_tree(day_tasks)
-        for i, root_task in enumerate(root_tasks):
-            is_last = (i == len(root_tasks) - 1)
-            print_task_tree(root_task, children, task_dict, is_last, "", is_root=True)
+        # For each root task of this day, get its complete hierarchy and print it
+        day_root_tasks = grouped[day]
+        for i, root_task in enumerate(day_root_tasks):
+            is_last = (i == len(day_root_tasks) - 1)
+            
+            # Get the complete tree under this root task (including completed children)
+            with sqlite3.connect(DB_FILE) as temp_conn:
+                all_descendants = temp_conn.execute("""
+                    WITH RECURSIVE task_tree AS (
+                        -- Base case: the root task itself
+                        SELECT id, title, status, creation_date, due_date, completion_date, recur, pid, parent_note_id
+                        FROM tasks
+                        WHERE id = ?
+                        
+                        UNION ALL
+                        -- Recursive case: all child tasks (including completed ones)
+                        SELECT t.id, t.title, t.status, t.creation_date, t.due_date, t.completion_date, t.recur, t.pid, t.parent_note_id
+                        FROM tasks t
+                        JOIN task_tree tt ON t.pid = tt.id OR t.parent_note_id = tt.id
+                    )
+                    SELECT id, title, status, creation_date, due_date, completion_date, recur, pid
+                    FROM task_tree
+                    ORDER BY id
+                """, (root_task[0],)).fetchall()  # root_task[0] is id
+
+            # Build the tree structure including all tasks (done and not done)
+            root_nodes, children, task_dict = build_task_tree(all_descendants)
+            
+            # Print each root node in this hierarchy (should just be the main root we started with)
+            for j, task_node in enumerate(root_nodes):
+                task_is_last = (j == len(root_nodes) - 1) and is_last
+                print_task_tree(task_node, children, task_dict, task_is_last, "\t", True)
 
 def show_note():
     with sqlite3.connect(DB_FILE) as conn:
@@ -1380,52 +1469,113 @@ def show_completed_tasks():
 
 def show_tasks_by_status():
     with sqlite3.connect(DB_FILE) as conn:
-        tasks = conn.execute("""
+        # Get only incomplete root tasks to build hierarchies from (tasks with no parent and not done)
+        root_tasks = conn.execute("""
             SELECT id, title, status, creation_date, due_date, completion_date, recur, pid
             FROM tasks 
+            WHERE status != 'done' AND pid IS NULL AND parent_note_id IS NULL
             ORDER BY 
                 CASE status 
                     WHEN 'todo' THEN 1
                     WHEN 'doing' THEN 2
                     WHEN 'waiting' THEN 3
-                    WHEN 'done' THEN 4
-                    ELSE 5
+                    ELSE 4
                 END,
                 due_date ASC, id ASC
         """).fetchall()
         
-        # Get all notes for tasks that will be displayed
-        if tasks:
-            task_ids = [str(task[0]) for task in tasks]
-            notes_query = """
-                SELECT id, text, creation_date, task_id 
-                FROM notes 
-                WHERE task_id IN ({})
-                ORDER BY creation_date ASC, id ASC
-            """.format(",".join("?" * len(task_ids)))
-            notes = conn.execute(notes_query, task_ids).fetchall()
+        # Get all notes for these root tasks and their hierarchies (including completed children)
+        if root_tasks:
+            # Collect all task IDs in the hierarchies under these incomplete root tasks
+            all_hierarchy_task_ids = set()
+            for root_task in root_tasks:
+                # Add current root task
+                all_hierarchy_task_ids.add(str(root_task[0]))  # root_task[0] is id
+                # Get all descendants of this root task (including completed ones)
+                with sqlite3.connect(DB_FILE) as conn2:
+                    descendants = conn2.execute("""
+                        WITH RECURSIVE task_tree AS (
+                            -- Base case: the root task itself
+                            SELECT id FROM tasks WHERE id = ?
+                            UNION ALL
+                            -- Recursive case: child tasks (including completed ones)
+                            SELECT t.id FROM tasks t
+                            JOIN task_tree tt ON t.pid = tt.id OR t.parent_note_id = tt.id
+                        )
+                        SELECT id FROM task_tree
+                    """, (root_task[0],)).fetchall()
+                    for desc in descendants:
+                        all_hierarchy_task_ids.add(str(desc[0]))
+            
+            if all_hierarchy_task_ids:
+                notes_query = """
+                    SELECT id, text, creation_date, task_id 
+                    FROM notes 
+                    WHERE task_id IN ({})
+                    ORDER BY creation_date ASC, id ASC
+                """.format(",".join("?" * len(list(all_hierarchy_task_ids))))
+                notes = conn.execute(notes_query, list(all_hierarchy_task_ids)).fetchall()
+            else:
+                notes = []
         else:
             notes = []
 
-    # Group tasks by status
-    grouped = defaultdict(list)
-    for t in tasks:
-        grouped[t[2]].append(t)  # t[2] is status
+    # Group root tasks by their status
+    grouped_by_status = defaultdict(list)
+    for t in root_tasks:
+        grouped_by_status[t[2]].append(t)  # t[2] is status
 
     # Display tasks grouped by status in the order: Todo, Doing, Waiting, Done
     status_order = ['todo', 'doing', 'waiting', 'done']
     status_labels = {'todo': 'Todo', 'doing': 'Doing', 'waiting': 'Waiting', 'done': 'Done'}
     
     for status in status_order:
-        if status in grouped and grouped[status]:
+        if status in grouped_by_status and grouped_by_status[status]:
             print(f"\n{status_labels[status]}")
             
-            # Build and print task tree for this status
-            status_tasks = grouped[status]
-            root_tasks, children, task_dict = build_task_tree(status_tasks)
-            for i, root_task in enumerate(root_tasks):
-                is_last = (i == len(root_tasks) - 1)
-                print_task_tree(root_task, children, task_dict, is_last, "", is_root=True)
+            # For each root task of this status, get its complete hierarchy and print it
+            status_root_tasks = grouped_by_status[status]
+            for i, root_task in enumerate(status_root_tasks):
+                is_last = (i == len(status_root_tasks) - 1)
+                
+                # Get complete hierarchy under this root task (including completed children)
+                with sqlite3.connect(DB_FILE) as temp_conn:
+                    all_descendants = temp_conn.execute("""
+                        WITH RECURSIVE task_tree AS (
+                            -- Base case: the root task itself
+                            SELECT id, title, status, creation_date, due_date, completion_date, recur, pid, parent_note_id
+                            FROM tasks
+                            WHERE id = ?
+                            
+                            UNION ALL
+                            -- Recursive case: all child tasks (including completed ones)
+                            SELECT t.id, t.title, t.status, t.creation_date, t.due_date, t.completion_date, t.recur, t.pid, t.parent_note_id
+                            FROM tasks t
+                            JOIN task_tree tt ON t.pid = tt.id OR t.parent_note_id = tt.id
+                        )
+                        SELECT id, title, status, creation_date, due_date, completion_date, recur, pid
+                        FROM task_tree
+                        ORDER BY 
+                            CASE status 
+                                WHEN 'todo' THEN 1
+                                WHEN 'doing' THEN 2
+                                WHEN 'waiting' THEN 3
+                                WHEN 'done' THEN 4
+                                ELSE 5
+                            END,
+                            due_date ASC, id ASC
+                    """, (root_task[0],)).fetchall()  # root_task[0] is id
+
+                # Build tree structure for this root with all its descendants
+                all_root_nodes, all_children, all_task_dict = build_task_tree(all_descendants)
+                
+                # Print each root node in the hierarchy (should be just the main root we started with)
+                for j, task_node in enumerate(all_root_nodes):
+                    task_is_last = (j == len(all_root_nodes) - 1) and is_last
+                    print_task_tree(task_node, all_children, all_task_dict, task_is_last, "", is_root=True)
+
+
+
 
 
 # --- CLI Parser ---

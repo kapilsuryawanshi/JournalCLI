@@ -1,319 +1,67 @@
-# j - Command Line Journal and Task Manager
+# JournalCLI - Task Management Application
 
-`j` is a powerful, minimalist command-line tool for managing tasks and notes. Designed for speed and simplicity, it allows users to efficiently track tasks, create notes, and organize information directly from the terminal.
-
-## Table of Contents
-- [Features](#features)
-- [Installation](#installation)
-- [Dependencies](#dependencies)
-- [Usage](#usage)
-- [Commands](#commands)
-- [Search Functionality](#search-functionality)
-- [Recurring Tasks](#recurring-tasks)
-- [Note Linking](#note-linking)
-- [Zettelkasten Support](#zettelkasten-support)
-- [Database](#database)
-- [Testing](#testing)
-- [Contributing](#contributing)
-- [License](#license)
+## Overview
+JournalCLI is a command-line tool for managing tasks and notes with a journal-like interface. It allows users to create, organize, and track tasks with due dates, status updates, and hierarchical structure.
 
 ## Features
 
-- **Task Management**: Create, track, and manage tasks with due dates and status updates
-- **Note Taking**: Create and organize notes with linking capabilities
-- **Flexible Views**: Multiple ways to view your tasks and notes (by due date, status, creation date, etc.)
-- **Color-Coded Interface**: Visual indicators for task status and due dates
-- **Powerful Search**: Search across all tasks and notes with wildcard support
-- **Recurring Tasks**: Set up tasks that automatically reoccur
-- **Note Linking**: Connect related notes for knowledge graph functionality
-- **Zettelkasten Ready**: Perfect for implementing a digital Zettelkasten system
-- **Scriptable**: Can be integrated into other tools and scripts for automation
-
-## Installation
-
-1. Download the `jrnl_app.py` file
-2. Ensure you have Python 3.x installed
-3. Install required dependencies: `pip install colorama`
-4. Use the application directly: `python jrnl_app.py` (or create an alias/script to run it as `j`)
-
-## Dependencies
-
-- Python 3.x
-- SQLite3 (typically included with Python)
-- Colorama (for colored output): `pip install colorama`
-
-## Usage
-
-```
-j [command] [arguments...]
-```
-
-## Commands
-
-### List Commands
-
-**List tasks by due date (default view)**:
-```
-j list task due
-j ls task due  # New alias for 'list'
-j  # This command is equivalent to the above
-```
-Shows tasks grouped by due date: Overdue, Due Today, Due Tomorrow, This Week, This Month, Future, No Due Date
-
-**List journal by creation date**:
-```
-j list page
-j ls page  # New alias for 'list'
-```
-Shows all entries grouped by creation date
-
-**List all unfinished tasks**:
-```
-j list task
-j ls task  # New alias for 'list'
-```
-
-**List tasks by status**:
-```
-j list task status
-j ls task status  # New alias for 'list'
-```
-Shows tasks grouped by status: Todo, Doing, Waiting
-
-**List completed tasks**:
-```
-j list task done
-j ls task done  # New alias for 'list'
-```
-Shows completed tasks grouped by completion date
-
-**List all notes**:
-```
-j list note
-j ls note  # New alias for 'list'
-```
-
-**Show specific note with linked notes**:
-```
-j note <id>
-```
-Shows the specific note with linked notes. To edit, use additional options like `-text`, `-link`, `-unlink`. To add a task under this note, use `-task <text>`.
-
-**Show specific task**:
-```
-j task <id>
-```
-Shows the specific task details with its subtasks. To edit, use additional options like `-text`, `-due`, `-note`, `-recur`.
-
-### Creation Commands
-
-**Create tasks**:
-```
-j task <text> [-due <YYYY-MM-DD|keyword>] [-recur <Nd|Nw|Nm|Ny>]
-```
-Examples:
-- `j task "Buy groceries"`
-
-```
-j task [@<pid>] <text> [-due <YYYY-MM-DD|keyword>] [-recur <Nd|Nw|Nm|Ny>]
-```
-Examples:
-- `j task @123 "Meeting with team" -due tomorrow`
-- `j task "Weekly report" -due eow -recur 1w`
-
-Due date keywords: `today`, `tomorrow`, `eow` (end of week), `eom` (end of month), `eoy` (end of year), day names (monday, tuesday, etc.)
-
-Recurrence patterns: `Nd` (N days), `Nw` (N weeks), `Nm` (N months), `Ny` (N years)
-
-**Create notes**:
-```
-j note <text> [-link <id>[,<id>,...]]
-```
-Examples:
-- `j note "Interesting idea for project"`
-- `j note "Follow up on meeting" -link 1,2`
-
-```
-j note [@<pid>] <text> [-link <id>[,<id>,...]]
-```
-Examples:
-- `j note @123 "Sub-note for the main topic"`
-
-### Modification Commands
-
-**Mark tasks as in progress**:
-```
-j start task <id>[,<id>...]
-```
-
-**Mark tasks as not done**:
-```
-j restart task <id>[,<id>...]
-```
-
-**Mark tasks as waiting**:
-```
-j waiting task <id>[,<id>...]
-```
-
-**Mark tasks as done**:
-```
-j done task <id>[,<id>...] [note text]
-```
-
-Supports the same due date keywords as task creation. Note text is optional.
-
-**Edit task**:
-```
-j task <id> [-text <text>] [-due <date>] [-note <note text>] [-recur <pattern>]
-```
-Examples:
-- `j task 1 -text "Updated task title"`
-- `j task 1 -due tomorrow`
-- `j task 1 -recur 2w`
-
-**Show specific task**:
-```
-j task <id>
-```
-Example:
-- `j task 1`
-
-**Edit note**:
-```
-j note <id> [-text <text>] [-link <id>[,<id>,...]] [-unlink <id>[,<id>,...]]
-```
-Examples:
-- `j note 1 -text "Updated note text"`
-- `j note 1 -link 2,3`
-- `j note 1 -unlink 2`
-
-**Show specific note with linked notes**:
-```
-j note <id>
-```
-Example:
-- `j note 1`
-
-### Deletion Commands
-
-**Delete notes or tasks**:
-```
-j rm <note|task> <id>[,<id>,...]
-```
-Examples:
-- `j rm note 1`
-- `j rm note 1,2,3`
-- `j rm task 1`
-- `j rm task 1,2,3`
-
-### Search Commands
-
-**Search for content in tasks and notes**:
-```
-j search <text>
-```
-Examples:
-- `j search "meeting"`
-- `j search "*important*"` (with wildcards)
-
-### Help
-
-**Show help**:
-```
-j help
-```
-
-## Search Functionality
-
-The search command allows you to find tasks and notes containing specific text:
-
-```
-j search <text>
-```
-
-Wildcard characters supported:
-- `*` - Matches any sequence of zero or more characters
-- `?` - Matches any single character
-
-Examples:
-- `j search "*task*"` - Find items containing "task" anywhere in the text
-- `j search "task ????"` - Find items where "task" is followed by exactly 4 characters
-- `j search "task*done"` - Find items that contain "task" followed by "done" with anything in between
-
-The search is case-insensitive and looks through both task titles and note texts.
-
-## Recurring Tasks
-
-`j` supports recurring tasks that automatically create new tasks when completed:
-
-```
-j new task "Take out trash" -due friday -recur 1w
-```
-
-This creates a task that recurs weekly. When marked as done, it will automatically create a new instance with the next due date calculated based on the recurrence pattern.
-
-Recurrence patterns:
-- `Nd`: Every N days (e.g., `2d` for every 2 days)
-- `Nw`: Every N weeks (e.g., `1w` for every week)
-- `Nm`: Every N months (e.g., `1m` for every month)
-- `Ny`: Every N years (e.g., `1y` for every year)
-
-## Note Linking
-
-Connect related notes to create a knowledge graph:
-
-```
-j new note "Project concept" -link 1,2
-j edit note 3 -link 4,5
-j edit note 3 -unlink 1
-```
-
-When you view a specific note, all linked notes will be displayed to help you see the connections in your knowledge network.
-
-## Zettelkasten Support
-
-The note linking functionality enables using `j` as a digital Zettelkasten system, which functions as a "second brain". The Zettelkasten method involves:
-
-1. Creating atomic notes (one idea per note)
-2. Linking related notes together
-3. Building a web of interconnected knowledge
-4. Discovering new connections and insights through the network structure
-
-`j` provides all necessary tools to implement this method effectively.
-
-## Database
-
-The application uses a SQLite database named `jrnl.db` to store all tasks, notes, and their relationships. The database is created automatically if it doesn't exist.
-
-## Testing
-
-The application includes comprehensive unit tests to ensure reliability:
-
-```
-# Run all tests
-python -m pytest tests/
-
-# Run specific test file
-python -m pytest tests/test_comprehensive_jrnl.py
-
-# Run tests with verbose output
-python -m pytest -v tests/
-```
-
-The test suite covers all major functionality of the application and uses the TDD methodology for quality assurance.
-
-## Contributing
-
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Make your changes
-4. Add tests for your changes
-5. Run the test suite to ensure everything works
-6. Commit your changes (`git commit -m 'Add some amazing feature'`)
-7. Push to the branch (`git push origin feature/amazing-feature`)
-8. Open a Pull Request
-
-## License
-
-This project is licensed under the MIT License - see the LICENSE file for details.
+### Task Management
+- Create tasks with optional due dates (`j task <text>`)
+- Support for various due date formats:
+  - Keywords: `today`, `tomorrow`, `eow` (end of week), `eom` (end of month), `eoy` (end of year)
+  - Day names: `monday`, `tuesday`, etc.
+  - Explicit dates: `YYYY-MM-DD`
+- Task statuses: `todo`, `doing`, `waiting`, `done`
+- Hierarchical tasks: Create child tasks under parent tasks
+- Recurring tasks with configurable patterns (daily, weekly, monthly, yearly)
+
+### Note Management
+- Create standalone notes or notes attached to tasks
+- Hierarchical notes (notes under other notes)
+- Link notes together for better organization
+
+### Viewing and Filtering
+- `j` or `j ls task due`: Show tasks grouped by due date (overdue, today, tomorrow, this week, this month, future)
+- `j ls task status`: Show tasks grouped by status (todo, doing, waiting, done)
+- `j ls task`: Show all incomplete tasks
+- `j ls page` or `j` (default): Show journal view with all tasks and notes grouped by creation date
+- `j ls note`: Show all notes
+
+## Change in Behavior
+
+### Hidden Completed Root Tasks
+**IMPORTANT CHANGE**: As of this update, the following commands will no longer display root tasks that are marked as completed:
+- `j` (default command, shows due tasks)  
+- `j ls task due` (shows tasks grouped by due date)
+- `j ls task status` (shows tasks grouped by status)
+- `j ls page` (shows journal view)
+
+This change was implemented to reduce clutter and focus on active tasks. When a root task is marked as completed, it and its entire subtree (all child tasks) will be hidden from these views.
+
+### Command Syntax
+- `j` - Show tasks by due date (default view)
+- `j task [@<pid>] <text> [-due <date>] [-recur <Nd|Nw|Nm|Ny>]` - Add a task, optionally under a parent
+- `j note [@<pid>] <text>` - Add a note, optionally under a parent note
+- `j ls <page|note|task> [due|status|done]` - List items with optional grouping
+- `j <start|restart|waiting|done> task <id>` - Update task status
+- `j done task <id> [note text]` - Mark task as done with optional note
+- `j rm <note|task> <id>` - Delete note or task
+- `j task <id> [-text <text>] [-due <date>] [-note <note_text>] [-recur <pattern>]` - Edit task
+- `j note <id> [-text <text>] [-link <id>] [-unlink <id>] [-task <text>]` - Edit note
+
+## Examples
+
+1. Create a task with due date: `j task Finish report @tomorrow`
+2. Mark task as done: `j done task 5`
+3. Show all overdue tasks: `j ls task due` (then look under "Overdue")
+4. Create child task: `j task @5 Write introduction` (creates child under task 5)
+5. Add note to task: `j note @5 This should include market analysis`
+
+## Technical Notes
+
+The application uses SQLite for data storage. The main tables are:
+- `tasks`: Stores task information (title, status, dates, parent task ID, etc.)
+- `notes`: Stores note information (text, creation date, task association, parent note ID)
+- `note_links`: Stores links between notes
+
+The application automatically excludes completed root tasks and their children from display in commands like `j`, `j ls task due`, and `j ls task status`.
