@@ -856,7 +856,7 @@ def show_journal():
 def show_due():
     with sqlite3.connect(DB_FILE) as conn:
         tasks = conn.execute(
-            "SELECT id,title,status,creation_date,due_date,completion_date,recur,pid FROM tasks WHERE status != 'done' ORDER BY due_date ASC"
+            "SELECT id,title,status,creation_date,due_date,completion_date,recur,pid FROM tasks WHERE status != 'done' ORDER BY id ASC"
         ).fetchall()
         
         # Get all notes for tasks that will be displayed
@@ -869,47 +869,61 @@ def show_due():
     for note in notes:
         task_notes[note[3]].append(note)  # note[3] is task_id
 
-    today = datetime.now().date()
-    tomorrow = today + timedelta(days=1)
-    # Calculate the end of this week (Sunday) and end of this month
-    end_of_week = today + timedelta(days=(6 - today.weekday()))
-    # For end of month, we get the last day of the current month
-    if today.month == 12:
-        end_of_month = today.replace(year=today.year + 1, month=1, day=1) - timedelta(days=1)
-    else:
-        end_of_month = today.replace(month=today.month + 1, day=1) - timedelta(days=1)
-    
-    # Updated to include pid in bucketing
-    buckets = {"Overdue": [], "Due Today": [], "Due Tomorrow": [], "This Week": [], "This Month": [], "Future": [], "No Due Date": []}
+    # Build the full tree structure first to preserve parent-child relationships
+    all_tasks = tasks
+    root_tasks, children, task_dict = build_task_tree(all_tasks)
 
-    for t in tasks:
-        # t[4] is due_date
-        if t[4]:  # Check if due date exists
-            due = datetime.strptime(t[4], "%Y-%m-%d").date()
-            if due < today:  # No need to check status since we filtered in query
-                buckets["Overdue"].append(t)
-            elif due == today:
-                buckets["Due Today"].append(t)
-            elif due == tomorrow:
-                buckets["Due Tomorrow"].append(t)
-            elif due <= end_of_week:
-                buckets["This Week"].append(t)
-            elif due <= end_of_month:
-                buckets["This Month"].append(t)
-            else:
-                buckets["Future"].append(t)
+    # Helper function to determine which bucket a due date belongs to
+    def get_task_bucket(due_date_str):
+        if not due_date_str:
+            return "No Due Date"
+        
+        due = datetime.strptime(due_date_str, "%Y-%m-%d").date()
+        today = datetime.now().date()
+        tomorrow = today + timedelta(days=1)
+        
+        # Calculate the end of this week (Sunday) and end of this month
+        end_of_week = today + timedelta(days=(6 - today.weekday()))
+        if today.month == 12:
+            end_of_month = today.replace(year=today.year + 1, month=1, day=1) - timedelta(days=1)
         else:
-            buckets["No Due Date"].append(t)
+            end_of_month = today.replace(month=today.month + 1, day=1) - timedelta(days=1)
+        
+        if due < today:
+            return "Overdue"
+        elif due == today:
+            return "Due Today"
+        elif due == tomorrow:
+            return "Due Tomorrow"
+        elif due <= end_of_week:
+            return "This Week"
+        elif due <= end_of_month:
+            return "This Month"
+        else:
+            return "Future"
 
-    # Updated order: Future, This Month, This Week, Due Tomorrow, Due Today, Overdue, No Due Date
+    # Group root tasks by their bucket, but keep children with their parents
+    buckets = {
+        "Future": [], 
+        "This Month": [], 
+        "This Week": [], 
+        "Due Tomorrow": [], 
+        "Due Today": [], 
+        "Overdue": [], 
+        "No Due Date": []
+    }
+    
+    for root_task in root_tasks:
+        bucket_label = get_task_bucket(root_task[4])  # root_task[4] is due_date
+        buckets[bucket_label].append(root_task)
+
+    # Print each bucket in the correct order
     for label in ["Future", "This Month", "This Week", "Due Tomorrow", "Due Today", "Overdue", "No Due Date"]:
         if buckets[label]:
             print(f"\n{label}")
-            # Build and print task tree for this bucket
-            bucket_tasks = buckets[label]
-            root_tasks, children, task_dict = build_task_tree(bucket_tasks)
-            for i, root_task in enumerate(root_tasks):
-                is_last = (i == len(root_tasks) - 1)
+            # Print tasks in this bucket maintaining their tree structure
+            for i, root_task in enumerate(buckets[label]):
+                is_last = (i == len(buckets[label]) - 1)
                 print_task_tree(root_task, children, task_dict, is_last, "", is_root=True)
 
 def show_task():
