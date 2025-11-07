@@ -888,12 +888,12 @@ def show_journal():
 def show_due():
     with sqlite3.connect(DB_FILE) as conn:
         tasks = conn.execute(
-            "SELECT id,title,status,creation_date,due_date,completion_date,recur,pid FROM tasks WHERE status != 'done' ORDER BY id ASC"
+            "SELECT id,title,status,creation_date,due_date,completion_date,recur,pid FROM tasks ORDER BY id ASC"
         ).fetchall()
         
         # Get all notes for tasks that will be displayed
         notes = conn.execute(
-            "SELECT id,text,creation_date,task_id FROM notes WHERE task_id IN (SELECT id FROM tasks WHERE status != 'done') ORDER BY creation_date ASC,id ASC"
+            "SELECT id,text,creation_date,task_id FROM notes WHERE task_id IN (SELECT id FROM tasks) ORDER BY creation_date ASC,id ASC"
         ).fetchall()
 
     # Create a mapping of task_id to list of notes for that task
@@ -1383,13 +1383,13 @@ def show_tasks_by_status():
         tasks = conn.execute("""
             SELECT id, title, status, creation_date, due_date, completion_date, recur, pid
             FROM tasks 
-            WHERE status != 'done'
             ORDER BY 
                 CASE status 
                     WHEN 'todo' THEN 1
                     WHEN 'doing' THEN 2
                     WHEN 'waiting' THEN 3
-                    ELSE 4
+                    WHEN 'done' THEN 4
+                    ELSE 5
                 END,
                 due_date ASC, id ASC
         """).fetchall()
@@ -1412,9 +1412,9 @@ def show_tasks_by_status():
     for t in tasks:
         grouped[t[2]].append(t)  # t[2] is status
 
-    # Display tasks grouped by status in the order: Todo, Doing, Waiting
-    status_order = ['todo', 'doing', 'waiting']
-    status_labels = {'todo': 'Todo', 'doing': 'Doing', 'waiting': 'Waiting'}
+    # Display tasks grouped by status in the order: Todo, Doing, Waiting, Done
+    status_order = ['todo', 'doing', 'waiting', 'done']
+    status_labels = {'todo': 'Todo', 'doing': 'Doing', 'waiting': 'Waiting', 'done': 'Done'}
     
     for status in status_order:
         if status in grouped and grouped[status]:
