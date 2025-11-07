@@ -186,50 +186,43 @@ def build_task_tree(tasks_list):
 
 def print_task_tree(task, children, task_dict, is_last=True, prefix="", is_root=True):
     """
-    Recursively print a task and its children in a tree structure using ASCII characters.
+    Recursively print a task and its children in a tree structure using tab indentation.
     """
     task_id = task[0]  # task[0] is id
     
-    # For root tasks (at the very beginning), we don't use tree characters
+    # For root tasks, use one tab
     if is_root:
-        prefix_str = "\t"  # Regular indent for root tasks
+        prefix_str = "\t"
         print(format_task(task, prefix_str))
+        # For notes under a root task, use 2 tabs to indent them under the task
+        note_prefix_for_this_task = "\t\t"
     else:
-        # For child tasks, use tree characters
-        if is_last:
-            prefix_str = prefix + "└─ "
-        else:
-            prefix_str = prefix + "├─ "
-        print(format_task(task, prefix_str))
+        # For child tasks, use prefix with tab
+        print(format_task(task, prefix + "\t"))
+        # For notes under a child task, use the prefix + 2 tabs
+        note_prefix_for_this_task = prefix + "\t\t"
     
-    # For notes under this task, we need to determine the appropriate prefix
+    # For notes under this task, use the calculated prefix
     with sqlite3.connect(DB_FILE) as conn:
         notes = conn.execute(
             "SELECT id,text,creation_date,task_id FROM notes WHERE task_id=?", 
             (task[0],)  # task[0] is id
         ).fetchall()
         
-    # Determine note prefix based on whether this is the last child
-    if is_root:
-        note_prefix = "\t\t"
-    else:
-        note_prefix = prefix + ("    " if is_last else "│   ")
-        
-    for i, note in enumerate(notes):
-        is_last_note = (i == len(notes) - 1) and (task_id not in children or len(children[task_id]) == 0)
-        note_prefix_for_note = note_prefix + ("└─ " if is_last_note else "├─ ")
-        print(format_note(note, note_prefix_for_note))
+    for note in notes:
+        # Use the pre-calculated prefix for notes under this task, with "> " for visual indication
+        formatted_note = format_note(note, note_prefix_for_this_task).replace(
+            note_prefix_for_this_task, 
+            note_prefix_for_this_task + "> ", 1
+        )
+        print(formatted_note)
     
-    # Recursively print children with appropriate prefixes
+    # Recursively print children with appropriate prefixes - add one more tab for children
     if task_id in children and children[task_id]:
-        child_count = len(children[task_id])
-        for i, child in enumerate(children[task_id]):
-            is_last_child = (i == child_count - 1)
-            if is_root:
-                child_prefix = "\t"  # For root level, children will start with tab
-            else:
-                child_prefix = prefix + ("    " if is_last else "│   ")
-            print_task_tree(child, children, task_dict, is_last_child, child_prefix, is_root=False)
+        for child in children[task_id]:
+            # For children, we need to add an additional tab level
+            child_prefix = prefix + "\t"
+            print_task_tree(child, children, task_dict, True, child_prefix, is_root=False)
 
 def build_task_tree(tasks_list):
     """
@@ -257,53 +250,6 @@ def build_task_tree(tasks_list):
                 children[parent_id].append(task)
     
     return root_tasks, children, task_dict
-
-def print_task_tree(task, children, task_dict, is_last=True, prefix="", is_root=True):
-    """
-    Recursively print a task and its children in a tree structure using ASCII characters.
-    """
-    task_id = task[0]  # task[0] is id
-    
-    # For root tasks (at the very beginning), we don't use tree characters
-    if is_root:
-        prefix_str = "\t"  # Regular indent for root tasks
-        print(format_task(task, prefix_str))
-    else:
-        # For child tasks, use tree characters
-        if is_last:
-            prefix_str = prefix + " └─ "
-        else:
-            prefix_str = prefix + " ├─ "
-        print(format_task(task, prefix_str))
-    
-    # For notes under this task, we need to determine the appropriate prefix
-    with sqlite3.connect(DB_FILE) as conn:
-        notes = conn.execute(
-            "SELECT id,text,creation_date,task_id FROM notes WHERE task_id=?", 
-            (task[0],)  # task[0] is id
-        ).fetchall()
-        
-    # Determine note prefix based on whether this is the last child
-    if is_root:
-        note_prefix = "\t    "
-    else:
-        note_prefix = prefix + ("    " if is_last else "│   ")
-        
-    for i, note in enumerate(notes):
-        is_last_note = (i == len(notes) - 1) and (task_id not in children or len(children[task_id]) == 0)
-        note_prefix_for_note = note_prefix + ("└─ " if is_last_note else "├─ ")
-        print(format_note(note, note_prefix_for_note))
-    
-    # Recursively print children with appropriate prefixes
-    if task_id in children and children[task_id]:
-        child_count = len(children[task_id])
-        for i, child in enumerate(children[task_id]):
-            is_last_child = (i == child_count - 1)
-            if is_root:
-                child_prefix = "\t"  # For root level, children will start with tab
-            else:
-                child_prefix = prefix + ("    " if is_last else " │  ")
-            print_task_tree(child, children, task_dict, is_last_child, child_prefix, is_root=False)
 
 def format_note(note, indent="\t"):
     nid, text, creation_date, task_id = note
@@ -1019,9 +965,9 @@ def show_note():
         for note in grouped[day]:
             nid, text, creation_date, task_id, task_title = note
             if task_id:
-                print(Fore.YELLOW + f"\t- {text} (id: {nid}) ({creation_date}) (for task: {task_id}. {task_title})" + Style.RESET_ALL)
+                print(Fore.YELLOW + f"\t> {text} (id: {nid}) ({creation_date}) (for task: {task_id}. {task_title})" + Style.RESET_ALL)
             else:
-                print(Fore.YELLOW + f"\t- {text} (id: {nid}) ({creation_date})" + Style.RESET_ALL)
+                print(Fore.YELLOW + f"\t> {text} (id: {nid}) ({creation_date})" + Style.RESET_ALL)
 
 def show_note_details(note_id):
     """Show details of a specific note, including linked notes"""

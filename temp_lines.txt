@@ -1,0 +1,35 @@
+        print(format_task(task, prefix))
+    
+    # For notes under this task, use the same prefix plus "> " to indicate the note  
+    with sqlite3.connect(DB_FILE) as conn:
+        notes = conn.execute(
+            "SELECT id,text,creation_date,task_id FROM notes WHERE task_id=?", 
+            (task[0],)  # task[0] is id
+        ).fetchall()
+        
+    note_prefix = prefix + "\t"
+        
+    for note in notes:
+        # Prefix notes with "> " to visually indicate the start of a new note
+        formatted_note_text = Fore.YELLOW + note_prefix + "> " + note[1] + f" (id:{note[0]}) ({note[2]})" + Style.RESET_ALL
+        print(formatted_note_text)
+    
+    # Recursively print children with appropriate prefixes
+    if task_id in children and children[task_id]:
+        for child in children[task_id]:
+            # Add one more tab for child tasks
+            child_prefix = prefix + "\t"
+            print_task_tree(child, children, task_dict, True, child_prefix, is_root=False)
+
+def format_note(note, indent="\t"):
+    nid, text, creation_date, task_id = note
+    return Fore.YELLOW + indent + f"{text} (id:{nid}) ({creation_date})" + Style.RESET_ALL
+
+def search_tasks_and_notes(search_text):
+    """Search for tasks and notes containing the search text (supports wildcards: * and ?)"""
+    # Convert user-friendly wildcards to SQL LIKE patterns
+    # * -> % (matches any sequence of characters)
+    # ? -> _ (matches any single character)
+    sql_search_text = search_text.replace("*", "%").replace("?", "_")
+    
+    with sqlite3.connect(DB_FILE) as conn:
