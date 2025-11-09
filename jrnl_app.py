@@ -22,71 +22,95 @@ def format_date_with_day(date_str):
 
 def init_db():
     with sqlite3.connect(DB_FILE) as conn:
-        # Create tasks table with all columns
+        # Drop old tables if they exist
+        conn.execute("DROP TABLE IF EXISTS tasks")
+        conn.execute("DROP TABLE IF EXISTS notes")
+        conn.execute("DROP TABLE IF EXISTS note_links")
+        
+        # Create new simplified schema tables
         conn.execute("""
-        CREATE TABLE IF NOT EXISTS tasks (
+        CREATE TABLE IF NOT EXISTS items (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
+            type TEXT CHECK(type IN ('todo','note')) DEFAULT 'todo',
             title TEXT NOT NULL,
-            status TEXT CHECK(status IN ('todo','doing','waiting','done')) DEFAULT 'todo',
             creation_date TEXT NOT NULL,
+            pid INTEGER,
+            FOREIGN KEY(pid) REFERENCES items(id)
+        )
+        """)
+
+        conn.execute("""
+        CREATE TABLE IF NOT EXISTS todo_info (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            item_id INTEGER,
+            status TEXT CHECK(status IN ('todo','doing','waiting','done')) DEFAULT 'todo',
             due_date TEXT NOT NULL,
             completion_date TEXT,
             recur TEXT,
-            pid INTEGER,
-            parent_note_id INTEGER,
-            FOREIGN KEY(pid) REFERENCES tasks(id),
-            FOREIGN KEY(parent_note_id) REFERENCES notes(id)
-        )""")
-        
-        # Check if recur column exists, and add it if it doesn't
-        try:
-            conn.execute("ALTER TABLE tasks ADD COLUMN recur TEXT")
-        except sqlite3.OperationalError:
-            # Column already exists, which is fine
-            pass
-        
-        # Check if pid column exists, and add it if it doesn't
-        try:
-            conn.execute("ALTER TABLE tasks ADD COLUMN pid INTEGER")
-        except sqlite3.OperationalError:
-            # Column already exists, which is fine
-            pass
+            FOREIGN KEY(item_id) REFERENCES items(id)
+        )
+        """)
 
-        # Check if parent_note_id column exists, and add it if it doesn't
-        try:
-            conn.execute("ALTER TABLE tasks ADD COLUMN parent_note_id INTEGER")
-        except sqlite3.OperationalError:
-            # Column already exists, which is fine
-            pass
-        
         conn.execute("""
-        CREATE TABLE IF NOT EXISTS notes (
+        CREATE TABLE IF NOT EXISTS item_links (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            text TEXT NOT NULL,
-            creation_date TEXT NOT NULL,
-            task_id INTEGER,
-            parent_note_id INTEGER,
-            FOREIGN KEY(task_id) REFERENCES tasks(id),
-            FOREIGN KEY(parent_note_id) REFERENCES notes(id)
-        )""")
-        
-        # Check if parent_note_id column exists in notes, and add it if it doesn't
-        try:
-            conn.execute("ALTER TABLE notes ADD COLUMN parent_note_id INTEGER")
-        except sqlite3.OperationalError:
-            # Column already exists, which is fine
-            pass
+            item1_id INTEGER NOT NULL,
+            item2_id INTEGER NOT NULL,
+            FOREIGN KEY(item1_id) REFERENCES items(id),
+            FOREIGN KEY(item2_id) REFERENCES items(id),
+            UNIQUE(item1_id, item2_id)
+        )
+        """)
 
-        # Create table for linking notes to each other
-        conn.execute("""
-        CREATE TABLE IF NOT EXISTS note_links (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            note1_id INTEGER NOT NULL,
-            note2_id INTEGER NOT NULL,
-            FOREIGN KEY(note1_id) REFERENCES notes(id),
-            FOREIGN KEY(note2_id) REFERENCES notes(id),
-            UNIQUE(note1_id, note2_id)
-        )""")
+def get_item_by_id(item_id):
+    """Retrieve an item by ID
+    
+    Args:
+        item_id (int): The ID of the item to retrieve
+    
+    Returns:
+        tuple: (id, type, title, creation_date, pid) or None if not found
+    """
+    with sqlite3.connect(DB_FILE) as conn:
+        item = conn.execute(
+            "SELECT id, type, title, creation_date, pid FROM items WHERE id=?",
+            (item_id,)
+        ).fetchone()
+        return item
+
+
+def get_todo_info(item_id):
+    """Retrieve todo information by item ID
+    
+    Args:
+        item_id (int): The ID of the item to get todo info for
+    
+    Returns:
+        tuple: (id, item_id, status, due_date, completion_date, recur) or None if not found
+    """
+    with sqlite3.connect(DB_FILE) as conn:
+        todo_info = conn.execute(
+            "SELECT id, item_id, status, due_date, completion_date, recur FROM todo_info WHERE item_id=?",
+            (item_id,)
+        ).fetchone()
+        return todo_info
+
+
+def get_item_links(item_id):
+    """Get all links for an item
+    
+    Args:
+        item_id (int): The ID of the item to get links for
+    
+    Returns:
+        list: List of tuples containing (item1_id, item2_id) for links
+    """
+    with sqlite3.connect(DB_FILE) as conn:
+        links = conn.execute(
+            "SELECT item1_id, item2_id FROM item_links WHERE item1_id=? OR item2_id=?",
+            (item_id, item_id)
+        ).fetchall()
+        return links
 
 # --- Date Helpers ---
 
@@ -125,332 +149,200 @@ def parse_due(keyword):
 
 # --- Display Helpers ---
 
-def format_task(task, prefix=""):
-    # task now has 8 elements: id, title, status, creation_date, due_date, completion_date, recur, pid
-    tid, title, status, creation_date, due_date, completion_date, recur, pid = task
-    checkbox = "[x]" if status == "done" else "[ ]"
-
-    # Color based on status
-    if status == "doing":
-        text = prefix + Back.YELLOW + Fore.BLACK + f"{checkbox} {title} (id:{tid})" + Style.RESET_ALL
-    elif status == "waiting":
-        text = prefix + Back.LIGHTBLACK_EX + Fore.WHITE + f"{checkbox} {title} (id:{tid})" + Style.RESET_ALL
-    elif status == "done":
-        text = prefix + Fore.GREEN + f"{checkbox} {title} (id:{tid})" + Style.RESET_ALL
-    else:  # todo
-        text = prefix + f"{checkbox} {title}  (id:{tid})"
-
-    # Show recur pattern if it exists
-    if recur:
-        text += f" (recur: {recur})"
-
-    # Show due date
-    due = datetime.strptime(due_date, "%Y-%m-%d").date()
-    today = datetime.now().date()
-    if status != "done":
-        if due < today:
-            text += Fore.RED + f" (due: {format_date_with_day(due_date)})"
-        elif due == today:
-            text += Fore.CYAN + f" (due: {format_date_with_day(due_date)})"
+def format_item(item, prefix=""):
+    """Format an item (todo or note) for display"""
+    # item has: id, type, title, creation_date, pid
+    item_id, item_type, title, creation_date, pid = item
+    
+    if item_type == 'todo':
+        # Get todo info
+        with sqlite3.connect(DB_FILE) as conn:
+            todo_info = conn.execute(
+                "SELECT status, due_date, completion_date, recur FROM todo_info WHERE item_id=?",
+                (item_id,)
+            ).fetchone()
+            
+        if todo_info:
+            status, due_date, completion_date, recur = todo_info
         else:
-            text += f" (due: {format_date_with_day(due_date)})"
-
-    return text + Style.RESET_ALL
-
-def build_task_tree(tasks_list):
-    """
-    Build a tree structure from a list of tasks.
-    Returns a dictionary with root tasks as keys and their children as values.
-    """
-    # Create a dictionary to store tasks by ID for easy lookup
-    task_dict = {task[0]: task for task in tasks_list}  # task[0] is id
-    
-    # Create a dictionary to store children for each task
-    children = {task[0]: [] for task in tasks_list}  # task[0] is id
-    
-    # Build the tree structure
-    root_tasks = []
-    for task in tasks_list:
-        task_id = task[0]  # task[0] is id
-        parent_id = task[7]  # task[7] is pid
+            # Default values for todo if not in todo_info table
+            status, due_date, completion_date, recur = 'todo', creation_date, None, None
         
-        if parent_id is None or parent_id == 0:
-            # This is a root task
-            root_tasks.append(task)
-        else:
-            # This is a child task, add it to its parent's children
-            if parent_id in children:
-                children[parent_id].append(task)
-    
-    return root_tasks, children, task_dict
+        checkbox = "[x]" if status == "done" else "[ ]"
 
-def print_task_tree(task, children, task_dict, is_last=True, prefix="", is_root=True):
+        # Color based on status
+        if status == "doing":
+            text = prefix + Back.YELLOW + Fore.BLACK + f"{checkbox} {title} (id:{item_id})" + Style.RESET_ALL
+        elif status == "waiting":
+            text = prefix + Back.LIGHTBLACK_EX + Fore.WHITE + f"{checkbox} {title} (id:{item_id})" + Style.RESET_ALL
+        elif status == "done":
+            text = prefix + Fore.GREEN + f"{checkbox} {title} (id:{item_id})" + Style.RESET_ALL
+        else:  # todo
+            text = prefix + f"{checkbox} {title}  (id:{item_id})"
+
+        # Show recur pattern if it exists
+        if recur:
+            text += f" (recur: {recur})"
+
+        # Show due date
+        if status != "done":
+            due = datetime.strptime(due_date, "%Y-%m-%d").date()
+            today = datetime.now().date()
+            if due < today:
+                text += Fore.RED + f" (due: {format_date_with_day(due_date)})"
+            elif due == today:
+                text += Fore.CYAN + f" (due: {format_date_with_day(due_date)})"
+            else:
+                text += f" (due: {format_date_with_day(due_date)})"
+
+        return text + Style.RESET_ALL
+    else:  # note
+        # For notes, simply return the formatted text
+        return prefix + Fore.YELLOW + f"> {title} (id:{item_id}) ({creation_date})" + Style.RESET_ALL
+
+def build_item_tree(items_list):
     """
-    Recursively print a task and its children in a tree structure using tab indentation.
+    Build a tree structure from a list of items.
+    Returns root items and children mapping.
     """
-    task_id = task[0]  # task[0] is id
+    # Create a dictionary to store items by ID for easy lookup
+    item_dict = {item[0]: item for item in items_list}  # item[0] is id
+
+    # Create a dictionary to store children for each item
+    children = {item[0]: [] for item in items_list}  # item[0] is id
+
+    # Build the tree structure
+    root_items = []
+    # Create a set of all item IDs in this list for quick lookup
+    item_ids = {item[0] for item in items_list}
     
-    # For root tasks, use one tab
+    for item in items_list:
+        item_id = item[0]  # item[0] is id
+        parent_id = item[4]  # item[4] is pid
+
+        if parent_id is None or parent_id == 0 or parent_id not in item_ids:
+            # This is a root item (no parent, or parent is 0, or parent is not in this subset)
+            root_items.append(item)
+        else:
+            # This is a child item, add it to its parent's children
+            if parent_id in children:
+                children[parent_id].append(item)
+
+    return root_items, children, item_dict
+
+def print_item_tree(item, children, item_dict, is_last=True, prefix="", is_root=True):
+    """
+    Recursively print an item and its children in a tree structure using tab indentation.
+    """
+    item_id = item[0]  # item[0] is id
+
+    # For root items, use one tab
     if is_root:
         prefix_str = "\t"
-        print(format_task(task, prefix_str))
-        # For notes under a root task, use 2 tabs to indent them under the task
-        note_prefix_for_this_task = "\t\t"
+        print(format_item(item, prefix_str))
     else:
-        # For child tasks, use prefix with tab
-        print(format_task(task, prefix + "\t"))
-        # For notes under a child task, use the prefix + 2 tabs
-        note_prefix_for_this_task = prefix + "\t\t"
-    
-    # For notes under this task, use the calculated prefix
-    with sqlite3.connect(DB_FILE) as conn:
-        notes = conn.execute(
-            "SELECT id,text,creation_date,task_id FROM notes WHERE task_id=?", 
-            (task[0],)  # task[0] is id
-        ).fetchall()
-        
-    for note in notes:
-        # Use the pre-calculated prefix for notes under this task, with "> " for visual indication
-        formatted_note = format_note(note, note_prefix_for_this_task).replace(
-            note_prefix_for_this_task, 
-            note_prefix_for_this_task + "> ", 1
-        )
-        print(formatted_note)
-    
+        # For child items, use prefix with tab
+        print(format_item(item, prefix + "\t"))
+
     # Recursively print children with appropriate prefixes - add one more tab for children
-    if task_id in children and children[task_id]:
-        for child in children[task_id]:
+    if item_id in children and children[item_id]:
+        for i, child in enumerate(children[item_id]):
+            is_last_child = (i == len(children[item_id]) - 1)
             # For children, we need to add an additional tab level
             child_prefix = prefix + "\t"
-            print_task_tree(child, children, task_dict, True, child_prefix, is_root=False)
-
-def build_task_tree(tasks_list):
-    """
-    Build a tree structure from a list of tasks.
-    Returns a dictionary with root tasks as keys and their children as values.
-    """
-    # Create a dictionary to store tasks by ID for easy lookup
-    task_dict = {task[0]: task for task in tasks_list}  # task[0] is id
-    
-    # Create a dictionary to store children for each task
-    children = {task[0]: [] for task in tasks_list}  # task[0] is id
-    
-    # Build the tree structure
-    root_tasks = []
-    for task in tasks_list:
-        task_id = task[0]  # task[0] is id
-        parent_id = task[7]  # task[7] is pid
-        
-        if parent_id is None or parent_id == 0:
-            # This is a root task
-            root_tasks.append(task)
-        else:
-            # This is a child task, add it to its parent's children
-            if parent_id in children:
-                children[parent_id].append(task)
-    
-    return root_tasks, children, task_dict
-
-def format_note(note, indent="\t"):
-    nid, text, creation_date, task_id = note
-    return Fore.YELLOW + indent + f"{text} (id:{nid}) ({creation_date})" + Style.RESET_ALL
-
-def search_tasks_and_notes(search_text):
-    """Search for tasks and notes containing the search text (supports wildcards: * and ?)"""
-    # Convert user-friendly wildcards to SQL LIKE patterns
-    # * -> % (matches any sequence of characters)
-    # ? -> _ (matches any single character)
-    sql_search_text = search_text.replace("*", "%").replace("?", "_")
-    
-    with sqlite3.connect(DB_FILE) as conn:
-        # Search in tasks (title column)
-        tasks = conn.execute(
-            """
-            SELECT id,title,status,creation_date,due_date,completion_date,recur,pid 
-            FROM tasks 
-            WHERE title LIKE ? 
-            ORDER BY creation_date ASC,id ASC
-            """,
-            (f"%{sql_search_text}%",)
-        ).fetchall()
-
-        # Search in notes (text column)
-        notes = conn.execute(
-            """
-            SELECT id,text,creation_date,task_id 
-            FROM notes 
-            WHERE text LIKE ? 
-            ORDER BY creation_date ASC,id ASC
-            """,
-            (f"%{sql_search_text}%",)
-        ).fetchall()
-
-    # Group by creation_date
-    grouped = defaultdict(lambda: {"tasks": [], "notes": []})
-    
-    # Add tasks to grouped dict
-    for t in tasks:
-        grouped[t[3]]["tasks"].append(t)  # t[3] is creation_date
-    
-    # Add notes to grouped dict
-    for n in notes:
-        if n[3]:  # attached to task
-            # We'll handle these under task display
-            pass
-        else:
-            grouped[n[2]]["notes"].append(n)  # n[2] is creation_date
-
-    # Get all notes that are attached to tasks (we need to show them with their tasks)
-    # Also get tasks that have notes matching the search term but the task title doesn't match
-    task_ids_from_notes = [note[3] for note in notes if note[3]]  # task_id for attached notes
-    task_ids_from_tasks = [task[0] for task in tasks]  # id for matching tasks
-    
-    # Get all unique task IDs we need to display
-    all_task_ids = list(set(task_ids_from_notes + task_ids_from_tasks))
-    
-    # Get the actual task records for those IDs
-    if all_task_ids:
-        with sqlite3.connect(DB_FILE) as conn:
-            task_query = """
-                SELECT id,title,status,creation_date,due_date,completion_date,recur,pid 
-                FROM tasks 
-                WHERE id IN ({})
-                ORDER BY creation_date ASC,id ASC
-            """.format(",".join("?" * len(all_task_ids)))
-            all_tasks = conn.execute(task_query, all_task_ids).fetchall()
-            
-            # Update grouped with all tasks (in case some were missing)
-            for t in all_tasks:
-                grouped[t[3]]["tasks"].append(t)  # t[3] is creation_date
-            
-            # Remove duplicates
-            for day in grouped:
-                # Remove duplicate tasks
-                seen_task_ids = set()
-                unique_tasks = []
-                for t in grouped[day]["tasks"]:
-                    if t[0] not in seen_task_ids:
-                        unique_tasks.append(t)
-                        seen_task_ids.add(t[0])
-                grouped[day]["tasks"] = unique_tasks
-
-    return grouped, tasks, notes
-
-def display_search_results(grouped):
-    """Display search results in the same format as the default journal view"""
-    has_results = any(grouped[day]["tasks"] or grouped[day]["notes"] for day in grouped)
-    
-    if not has_results:
-        print("No matching tasks or notes found.")
-        return
-
-    # Get all tasks and notes to properly display attached notes
-    with sqlite3.connect(DB_FILE) as conn:
-        all_tasks = conn.execute(
-            "SELECT id,title,status,creation_date,due_date,completion_date,recur,pid FROM tasks ORDER BY creation_date ASC,id ASC"
-        ).fetchall()
-        all_notes = conn.execute(
-            "SELECT id,text,creation_date,task_id FROM notes ORDER BY creation_date ASC,id ASC"
-        ).fetchall()
-
-    for day in sorted(grouped.keys()):
-        tasks_for_day = grouped[day]["tasks"]
-        notes_for_day = grouped[day]["notes"]
-        
-        if tasks_for_day or notes_for_day:
-            print()
-            print(format_date_with_day(day))
-            
-            # Build and print task tree for this day
-            if tasks_for_day:
-                root_tasks, children, task_dict = build_task_tree(tasks_for_day)
-                for i, root_task in enumerate(root_tasks):
-                    is_last = (i == len(root_tasks) - 1)
-                    print_task_tree(root_task, children, task_dict, is_last, "", is_root=True)
-            
-            # Display standalone notes
-            for note in notes_for_day:
-                if not note[3]:  # note[3] is task_id, only show standalone notes
-                    print(format_note(note, indent="\t"))
+            print_item_tree(child, children, item_dict, is_last_child, child_prefix, is_root=False)
 
 # --- Command Handlers ---
 
-def add_task(texts):
-    today = datetime.now().date().strftime("%Y-%m-%d")
-    added_task_ids = []
-    with sqlite3.connect(DB_FILE) as conn:
-        for raw in texts:
-            raw = raw.strip()
-            if "@" in raw:
-                title, due_kw = raw.split("@", 1)
-                due = parse_due(due_kw.strip())
-            else:
-                title = raw
-                due = datetime.now().date()
-            cursor = conn.execute(
-                "INSERT INTO tasks (title,status,creation_date,due_date) VALUES (?,?,?,?)",
-                (title.strip(), "todo", today, due.strftime("%Y-%m-%d"))
-            )
-            task_id = cursor.lastrowid
-            added_task_ids.append(task_id)
+def add_item(title, item_type, parent_id=None):
+    """Add a new item (todo or note) to the database
     
+    Args:
+        title (str): The title/text of the item
+        item_type (str): 'todo' or 'note'
+        parent_id (int, optional): ID of parent item if this is a child
+    
+    Returns:
+        int: The ID of the newly created item
+    """
+    today = datetime.now().date().strftime("%Y-%m-%d")
+    with sqlite3.connect(DB_FILE) as conn:
+        cursor = conn.execute(
+            "INSERT INTO items (type, title, creation_date, pid) VALUES (?, ?, ?, ?)",
+            (item_type, title, today, parent_id)
+        )
+        item_id = cursor.lastrowid
+        
+        # For todo items, add default entry in todo_info table
+        if item_type == 'todo':
+            conn.execute(
+                "INSERT INTO todo_info (item_id, status, due_date) VALUES (?, 'todo', ?)",
+                (item_id, today)  # Default due date to today
+            )
+    
+    return item_id
+    
+def add_task(texts):
+    """Add a new task (todo item)"""
+    added_task_ids = []
+    for raw in texts:
+        raw = raw.strip()
+        if "@" in raw:
+            title, due_kw = raw.split("@", 1)
+            due = parse_due(due_kw.strip())
+            item_id = add_item_with_details(title.strip(), "todo", due.strftime("%Y-%m-%d"))
+        else:
+            title = raw
+            item_id = add_item(title.strip(), "todo")
+        added_task_ids.append(item_id)
+
     if added_task_ids:
         if len(added_task_ids) == 1:
             print(f"Added task with id {added_task_ids[0]}")
         else:
             print(f"Added tasks with IDs: {', '.join(map(str, added_task_ids))}")
-    
+
     return added_task_ids
 
 def add_note_under_note(parent_note_id, text):
     """Add a note under another specific note"""
     # Verify the parent note exists
     with sqlite3.connect(DB_FILE) as conn:
-        parent_note = conn.execute("SELECT id FROM notes WHERE id=?", (parent_note_id,)).fetchone()
+        parent_note = conn.execute("SELECT id FROM items WHERE id=? AND type='note'", (parent_note_id,)).fetchone()
         if not parent_note:
             print(f"Error: Parent note with ID {parent_note_id} does not exist")
             return False
-    
-    # Add the note with parent_note_id
-    today = datetime.now().date().strftime("%Y-%m-%d")
-    with sqlite3.connect(DB_FILE) as conn:
-        cursor = conn.execute(
-            "INSERT INTO notes (text,creation_date,parent_note_id) VALUES (?,?,?)",
-            (text, today, parent_note_id)
-        )
-        note_id = cursor.lastrowid
-    print(f"Added note with id {note_id} under parent note {parent_note_id}")
-    return note_id
+
+    # Add the note with parent_id
+    item_id = add_item(text, "note", parent_note_id)
+    print(f"Added note with id {item_id} under parent note {parent_note_id}")
+    return item_id
 
 def add_note(task_ids, text, parent_note_id=None):
-    today = datetime.now().date().strftime("%Y-%m-%d")
+    """Add a note, either standalone, under a task, or under another note"""
     added_note_ids = []
-    with sqlite3.connect(DB_FILE) as conn:
-        if not task_ids and parent_note_id is None:
-            cursor = conn.execute(
-                "INSERT INTO notes (text,creation_date) VALUES (?,?)",
-                (text, today)
-            )
-            note_id = cursor.lastrowid
-            added_note_ids.append(note_id)
-        elif parent_note_id is not None:
-            # Add note under parent note
-            cursor = conn.execute(
-                "INSERT INTO notes (text,creation_date,parent_note_id) VALUES (?,?,?)",
-                (text, today, parent_note_id)
-            )
-            note_id = cursor.lastrowid
-            added_note_ids.append(note_id)
-        else:
-            # Add note under tasks
-            for tid in task_ids:
-                cursor = conn.execute(
-                    "INSERT INTO notes (text,creation_date,task_id) VALUES (?,?,?)",
-                    (text, today, tid)
-                )
-                note_id = cursor.lastrowid
-                added_note_ids.append(note_id)
     
+    if not task_ids and parent_note_id is None:
+        # Add standalone note
+        item_id = add_item(text, "note")
+        added_note_ids.append(item_id)
+    elif parent_note_id is not None:
+        # Add note under parent note
+        item_id = add_item(text, "note", parent_note_id)
+        added_note_ids.append(item_id)
+    elif task_ids:
+        # Add note under tasks - for each task ID, create a note with that task as parent
+        for tid in task_ids:
+            # Verify the parent task exists
+            with sqlite3.connect(DB_FILE) as conn:
+                parent_task = conn.execute("SELECT id FROM items WHERE id=? AND type='todo'", (tid,)).fetchone()
+                if not parent_task:
+                    print(f"Error: Parent task with ID {tid} does not exist")
+                    continue
+            
+            item_id = add_item(text, "note", tid)  # Using tid as parent id
+            added_note_ids.append(item_id)
+
     if added_note_ids:
         if len(added_note_ids) == 1:
             note_id = added_note_ids[0]
@@ -461,165 +353,74 @@ def add_note(task_ids, text, parent_note_id=None):
             else:
                 print(f"Added standalone note with id {note_id}")
         else:
-            # Multiple notes added to multiple tasks
+            # Multiple notes added
             if task_ids:
                 print(f"Added notes with IDs {', '.join(map(str, added_note_ids))} to tasks {', '.join(map(str, task_ids))}")
             else:
                 print(f"Added notes with IDs: {', '.join(map(str, added_note_ids))}")
-    
+
     return added_note_ids
 
 def update_task_status(task_ids, status, note_text=None):
+    """Update the status of task items"""
     updated_count = 0
-    with sqlite3.connect(DB_FILE) as conn:
-        for tid in task_ids:
-            # Check if trying to mark a parent task as done when children are not completed
-            if status == "done":
-                # Check if this task has any children that are not done
-                children = conn.execute(
-                    "SELECT id, status FROM tasks WHERE pid = ? AND status != 'done'", (tid,)
-                ).fetchall()
-                
-                if children:
-                    print(f"Error: Cannot mark task {tid} as done because it has {len(children)} incomplete child task(s)")
-                    continue  # Skip updating this task
-            
-            # If marking as done, check if it's a recurring task
-            if status == "done":
-                # Get the task's recur pattern
-                task = conn.execute(
-                    "SELECT id, title, due_date, recur FROM tasks WHERE id=?", (tid,)
-                ).fetchone()
-                today = datetime.now().date().strftime("%Y-%m-%d")                
-                if task and task[3]:  # If task has a recur pattern (task[3] is recur)
-                    # Create a new task with the same details but new due date
-
-                    old_task_id, title, due_date, recur = task
-                    # Calculate next due date from the completion date (today)
-                    new_due_date = calculate_next_due_date(today, recur)
-                    
-                    # Insert the new recurring parent task
-                    new_parent_id = conn.execute(
-                        "INSERT INTO tasks (title,status,creation_date,due_date,recur) VALUES (?,?,?,?,?)",
-                        (title, "todo", today, new_due_date, recur)
-                    ).lastrowid
-                    print(f"Created recurring task '{title}' with id {new_parent_id}")
-                    
-                    # Recursively recreate the entire child task structure
-                    def recreate_task_hierarchy(old_parent_id, new_parent_id, parent_due_date):
-                        # Get direct children of the current parent
-                        child_tasks = conn.execute(
-                            "SELECT id, title, status, creation_date, due_date, completion_date, recur FROM tasks WHERE pid = ?",
-                            (old_parent_id,)
-                        ).fetchall()
-                        
-                        count = 0
-                        for child_task in child_tasks:
-                            child_id, child_title, child_status, child_creation_date, child_due_date, child_completion_date, child_recur = child_task
-                            
-                            # Reset status to 'todo' and update due date to match parent's new due date
-                            # Keep completion_date as NULL since it's a new task instance
-                            # Child tasks should not have recurrence, so set to None
-                            new_child_id = conn.execute(
-                                "INSERT INTO tasks (title, status, creation_date, due_date, completion_date, recur, pid) VALUES (?,?,?,?,?,?,?)",
-                                (child_title, "todo", today, parent_due_date, None, None, new_parent_id)
-                            ).lastrowid
-                            
-                            # Recursively recreate grandchildren and deeper levels
-                            grandchildren_count = recreate_task_hierarchy(child_id, new_child_id, parent_due_date)
-                            count += 1 + grandchildren_count
-                            
-                        return count
-                    
-                    total_recreated = recreate_task_hierarchy(old_task_id, new_parent_id, new_due_date)
-                    if total_recreated > 0:
-                        print(f"  Recreated {total_recreated} child task(s) for the recurring task {new_parent_id} (including all subtasks)")
-                
-                # Set completion date for the original task
-                conn.execute(
-                    "UPDATE tasks SET status=?, completion_date=? WHERE id=?",
-                    (status, today, tid)
-                )
-                updated_count += 1
-                
-                # Add note to the completed task if provided
-                if note_text:
-                    conn.execute(
-                        "INSERT INTO notes (text,creation_date,task_id) VALUES (?,?,?)",
-                        (note_text, today, tid)
-                    )
-            # If moving from done to another status, clear completion date
-            elif status in ["todo", "doing", "waiting"]:
-                conn.execute(
-                    "UPDATE tasks SET status=?, completion_date=NULL WHERE id=?",
-                    (status, tid)
-                )
-                updated_count += 1
-            else:
-                conn.execute(
-                    "UPDATE tasks SET status=? WHERE id=?",
-                    (status, tid)
-                )
-                updated_count += 1
+    for tid in task_ids:
+        # Update todo status
+        update_todo_status(tid, status)
+        updated_count += 1
+        
+        # Add note to the completed task if provided
+        if status == 'done' and note_text:
+            add_note([], note_text)
+    
     if updated_count > 0:
         status_display = "undone" if status == "todo" else status
         if updated_count == 1:
             print(f"Updated task {task_ids[0]} to {status_display}")
         else:
             print(f"Updated {updated_count} tasks to {status_display}")
-    elif status == "done" and task_ids:
-        print(f"No tasks were updated to done (likely due to incomplete child tasks)")
 
-def calculate_next_due_date(completion_date, recur_pattern):
-    """Calculate the next due date based on the recur pattern from the completion date"""
-    try:
-        # Parse the recur pattern (e.g., "4w", "2d", "1m", "1y")
-        if not recur_pattern or len(recur_pattern) < 2:
-            return completion_date
-            
-        number = int(recur_pattern[:-1])
-        unit = recur_pattern[-1].lower()
+def update_todo_status(item_id, status):
+    """Update the status of a todo item"""
+    today = datetime.now().date().strftime("%Y-%m-%d")
+    with sqlite3.connect(DB_FILE) as conn:
+        # Check if there's already an entry in todo_info
+        existing = conn.execute(
+            "SELECT item_id FROM todo_info WHERE item_id=?",
+            (item_id,)
+        ).fetchone()
         
-        # Validate number range
-        if number < 1 or number > 31:
-            return completion_date
-        
-        # Parse the completion date
-        current_date = datetime.strptime(completion_date, "%Y-%m-%d").date()
-        
-        if unit == 'd':  # days
-            new_date = current_date + timedelta(days=number)
-        elif unit == 'w':  # weeks
-            new_date = current_date + timedelta(weeks=number)
-        elif unit == 'm':  # months
-            # For months, we add the months
-            if current_date.month + number <= 12:
-                new_date = current_date.replace(month=current_date.month + number)
+        if existing:
+            # Update the existing record
+            if status == 'done':
+                conn.execute(
+                    "UPDATE todo_info SET status=?, completion_date=? WHERE item_id=?",
+                    (status, today, item_id)
+                )
             else:
-                new_year = current_date.year + (current_date.month + number - 1) // 12
-                new_month = (current_date.month + number - 1) % 12 + 1
-                new_date = current_date.replace(year=new_year, month=new_month)
-        elif unit == 'y':  # years
-            new_date = current_date.replace(year=current_date.year + number)
+                conn.execute(
+                    "UPDATE todo_info SET status=?, completion_date=NULL WHERE item_id=?",
+                    (status, item_id)
+                )
         else:
-            return completion_date
-            
-        return new_date.strftime("%Y-%m-%d")
-    except:
-        return completion_date
+            # Insert new record
+            conn.execute(
+                "INSERT INTO todo_info (item_id, status, due_date) VALUES (?, ?, ?)",
+                (item_id, status, today)
+            )
 
 def set_task_recur(task_ids, recur_pattern):
     """Set the recur pattern for tasks"""
     # Validate the recur pattern
     if not recur_pattern or len(recur_pattern) < 2:
-        print("Error: Invalid recur pattern. Use format: <number><unit> (e.g., 4w, 2d, 1m, 1y)")
+        print("Error: Invalid recur pattern. Use...")
         return False
-        
+
     unit = recur_pattern[-1].lower()
     if unit not in ['d', 'w', 'm', 'y']:
         print("Error: Invalid unit. Use d (days), w (weeks), m (months), or y (years)")
         return False
-        
+
     try:
         number = int(recur_pattern[:-1])
         if number < 1 or number > 31:
@@ -628,11 +429,25 @@ def set_task_recur(task_ids, recur_pattern):
     except ValueError:
         print("Error: Invalid number in recur pattern")
         return False
-    
+
     with sqlite3.connect(DB_FILE) as conn:
         for tid in task_ids:
+            # Check if a record exists in todo_info, if not create one
+            existing = conn.execute(
+                "SELECT item_id FROM todo_info WHERE item_id=?",
+                (tid,)
+            ).fetchone()
+            
+            if not existing:
+                # Create a new record with default values
+                conn.execute(
+                    "INSERT INTO todo_info (item_id, status, due_date) VALUES (?, 'todo', ?)",
+                    (tid, datetime.now().date().strftime("%Y-%m-%d"))
+                )
+            
+            # Update the recur field
             conn.execute(
-                "UPDATE tasks SET recur=? WHERE id=?",
+                "UPDATE todo_info SET recur=? WHERE item_id=?",
                 (recur_pattern, tid)
             )
     return True
@@ -640,15 +455,15 @@ def set_task_recur(task_ids, recur_pattern):
 def edit_task(task_id, new_title):
     """Edit the title of a task"""
     with sqlite3.connect(DB_FILE) as conn:
-        # Check if task exists
-        cursor = conn.execute("SELECT id FROM tasks WHERE id=?", (task_id,))
+        # Check if item exists
+        cursor = conn.execute("SELECT id FROM items WHERE id=? AND type='todo'", (task_id,))
         if not cursor.fetchone():
             print(f"Error: Task with ID {task_id} not found")
             return False
-        
-        # Update the task title
+
+        # Update the item title
         conn.execute(
-            "UPDATE tasks SET title=? WHERE id=?",
+            "UPDATE items SET title=? WHERE id=?",
             (new_title, task_id)
         )
         print(f"Updated task {task_id} title to: {new_title}")
@@ -657,68 +472,70 @@ def edit_task(task_id, new_title):
 def edit_note(note_id, new_text):
     """Edit the text of a note"""
     with sqlite3.connect(DB_FILE) as conn:
-        # Check if note exists
-        cursor = conn.execute("SELECT id FROM notes WHERE id=?", (note_id,))
+        # Check if item exists
+        cursor = conn.execute("SELECT id FROM items WHERE id=? AND type='note'", (note_id,))
         if not cursor.fetchone():
             print(f"Error: Note with ID {note_id} not found")
             return False
-        
-        # Update the note text
+
+        # Update the item text (stored in title field)
         conn.execute(
-            "UPDATE notes SET text=? WHERE id=?",
+            "UPDATE items SET title=? WHERE id=?",
             (new_text, note_id)
         )
         print(f"Updated note {note_id} text to: {new_text}")
         return True
 
 def delete_task(task_ids):
-    """Delete tasks from the database along with their child tasks recursively"""
+    """Delete tasks from the database along with their child items recursively"""
     if not task_ids:
         print("No tasks to delete")
         return
-    
-    # Get all tasks that need to be deleted (including children)
-    all_tasks_to_delete = set(task_ids)
-    
+
+    # Get all items that need to be deleted (including children)
+    all_items_to_delete = set(task_ids)
+
     with sqlite3.connect(DB_FILE) as conn:
-        # Find all child tasks recursively using a loop
-        current_tasks = list(task_ids)
-        while current_tasks:
-            # Get children of current tasks
-            placeholders = ",".join("?" * len(current_tasks))
+        # Find all child items recursively using a loop
+        current_items = list(task_ids)
+        while current_items:
+            # Get children of current items
+            placeholders = ",".join("?" * len(current_items))
             children = conn.execute(
-                f"SELECT id FROM tasks WHERE pid IN ({placeholders})",
-                current_tasks
+                f"SELECT id FROM items WHERE pid IN ({placeholders})",
+                current_items
             ).fetchall()
-            
+
             # Add children to the deletion list
-            current_tasks = [child[0] for child in children]
-            all_tasks_to_delete.update(current_tasks)
-    
+            current_items = [child[0] for child in children]
+            all_items_to_delete.update(current_items)
+
     # Ask for confirmation before deletion
-    total_tasks = len(all_tasks_to_delete)
-    if total_tasks == 0:
+    total_items = len(all_items_to_delete)
+    if total_items == 0:
         print("No tasks to delete")
         return
-    
-    print(f"Warning: You are about to delete {total_tasks} task(s) (including children). This action cannot be undone.")
+
+    print(f"Warning: You are about to delete {total_items} task(s) (including children). This action cannot be undone.")
     confirmation = input("Type 'yes' to confirm deletion: ").strip().lower()
-    
+
     if confirmation != 'yes':
         print("Deletion cancelled.")
         return
-    
-    # Now delete all tasks and their associated notes
+
+    # Now delete all items and their associated todo_info records
     deleted_count = 0
     with sqlite3.connect(DB_FILE) as conn:
-        for tid in all_tasks_to_delete:
-            # Delete associated notes
-            conn.execute("DELETE FROM notes WHERE task_id=?", (tid,))
-            # Delete the task
-            cursor = conn.execute("DELETE FROM tasks WHERE id=?", (tid,))
+        for item_id in all_items_to_delete:
+            # Delete any links associated with this item
+            conn.execute("DELETE FROM item_links WHERE item1_id=? OR item2_id=?", (item_id, item_id))
+            # Delete the todo_info record if it exists
+            conn.execute("DELETE FROM todo_info WHERE item_id=?", (item_id,))
+            # Delete the item
+            cursor = conn.execute("DELETE FROM items WHERE id=?", (item_id,))
             if cursor.rowcount > 0:
                 deleted_count += 1
-    
+
     if deleted_count > 0:
         if deleted_count == 1:
             print(f"Deleted 1 task (including children if any)")
@@ -731,44 +548,46 @@ def add_task_under_note(note_id, text):
     """Add a task under a specific note"""
     # Verify the note exists
     with sqlite3.connect(DB_FILE) as conn:
-        note = conn.execute("SELECT id FROM notes WHERE id=?", (note_id,)).fetchone()
+        note = conn.execute("SELECT id FROM items WHERE id=? AND type='note'", (note_id,)).fetchone()
         if not note:
             print(f"Error: Note with ID {note_id} does not exist")
             return False
-    
-    # Add the task with parent_note_id
-    today = datetime.now().date().strftime("%Y-%m-%d")
-    with sqlite3.connect(DB_FILE) as conn:
-        cursor = conn.execute(
-            "INSERT INTO tasks (title,status,creation_date,due_date,parent_note_id) VALUES (?,?,?,?,?)",
-            (text, "todo", today, today, note_id)
-        )
-        task_id = cursor.lastrowid
-    print(f"Added task with id {task_id} to note {note_id}")
-    return task_id
 
-def delete_note(note_ids):
+    # Add the task with parent_id
+    today = datetime.now().date().strftime("%Y-%m-%d")
+    item_id = add_item_with_details(text, "todo", today, note_id)
+    print(f"Added task with id {item_id} to note {note_id}")
+    return item_id
+
+def delete_note(note_ids, auto_confirm=False):
     """Delete notes from the database"""
     if not note_ids:
         print("No notes to delete")
         return
-    
-    # Ask for confirmation before deletion
+
+    # Ask for confirmation before deletion (skip if auto_confirm is True)
     total_notes = len(note_ids)
-    print(f"Warning: You are about to delete {total_notes} note(s). This action cannot be undone.")
-    confirmation = input("Type 'yes' to confirm deletion: ").strip().lower()
-    
-    if confirmation != 'yes':
-        print("Deletion cancelled.")
+    if total_notes == 0:
+        print("No notes to delete")
         return
-    
+
+    if not auto_confirm:
+        print(f"Warning: You are about to delete {total_notes} note(s). This action cannot be undone.")
+        confirmation = input("Type 'yes' to confirm deletion: ").strip().lower()
+
+        if confirmation != 'yes':
+            print("Deletion cancelled.")
+            return
+
     deleted_count = 0
     with sqlite3.connect(DB_FILE) as conn:
         for nid in note_ids:
-            # First delete any links associated with this note
-            conn.execute("DELETE FROM note_links WHERE note1_id=? OR note2_id=?", (nid, nid))
-            # Then delete the note itself
-            cursor = conn.execute("DELETE FROM notes WHERE id=?", (nid,))
+            # First delete any links associated with this item
+            conn.execute("DELETE FROM item_links WHERE item1_id=? OR item2_id=?", (nid, nid))
+            # Then delete the todo_info record if it exists (shouldn't be for notes, but just in case)
+            conn.execute("DELETE FROM todo_info WHERE item_id=?", (nid,))
+            # Then delete the item itself
+            cursor = conn.execute("DELETE FROM items WHERE id=?", (nid,))
             if cursor.rowcount > 0:
                 deleted_count += 1
     if deleted_count > 0:
@@ -779,65 +598,137 @@ def delete_note(note_ids):
     else:
         print("No notes were deleted")
 
+def delete_item(item_ids, auto_confirm=False):
+    """Delete items (both notes and todos) from the database"""
+    if not item_ids:
+        print("No items to delete")
+        return
+
+    # Get all items that need to be deleted (including children)
+    all_items_to_delete = set(item_ids)
+
+    with sqlite3.connect(DB_FILE) as conn:
+        # Find all child items recursively using a loop
+        current_items = list(item_ids)
+        while current_items:
+            # Get children of current items
+            placeholders = ",".join("?" * len(current_items))
+            children = conn.execute(
+                f"SELECT id FROM items WHERE pid IN ({placeholders})",
+                current_items
+            ).fetchall()
+
+            # Add children to the deletion list
+            current_items = [child[0] for child in children]
+            all_items_to_delete.update(current_items)
+
+    # Ask for confirmation before deletion (skip if auto_confirm is True)
+    total_items = len(all_items_to_delete)
+    if total_items == 0:
+        print("No items to delete")
+        return
+
+    if not auto_confirm:
+        print(f"Warning: You are about to delete {total_items} item(s) (including children). This action cannot be undone.")
+        confirmation = input("Type 'yes' to confirm deletion: ").strip().lower()
+
+        if confirmation != 'yes':
+            print("Deletion cancelled.")
+            return
+
+    # Now delete all items and their associated data
+    deleted_count = 0
+    with sqlite3.connect(DB_FILE) as conn:
+        for item_id in all_items_to_delete:
+            # First delete any links associated with this item
+            conn.execute("DELETE FROM item_links WHERE item1_id=? OR item2_id=?", (item_id, item_id))
+            # Then delete the todo_info record if it exists
+            conn.execute("DELETE FROM todo_info WHERE item_id=?", (item_id,))
+            # Then delete the item
+            cursor = conn.execute("DELETE FROM items WHERE id=?", (item_id,))
+            if cursor.rowcount > 0:
+                deleted_count += 1
+
+    if deleted_count > 0:
+        if deleted_count == 1:
+            print(f"Deleted 1 item (including children if any)")
+        else:
+            print(f"Deleted {deleted_count} items (including children if any)")
+    else:
+        print("No items were deleted")
+
+def clear_all():
+    """Clear all data from the database after confirmation"""
+    # First, count existing items
+    with sqlite3.connect(DB_FILE) as conn:
+        total_items = conn.execute("SELECT COUNT(*) FROM items").fetchone()[0]
+        total_links = conn.execute("SELECT COUNT(*) FROM item_links").fetchone()[0]
+        total_todo_info = conn.execute("SELECT COUNT(*) FROM todo_info").fetchone()[0]
+    
+    total_data_points = total_items + total_links + total_todo_info
+    
+    if total_data_points == 0:
+        print("Database is already empty.")
+        return
+    
+    print(f"WARNING: You are about to permanently delete ALL data from the database.")
+    print(f"This will remove {total_items} items, {total_links} links, and {total_todo_info} todo info records.")
+    print("THIS ACTION CANNOT BE UNDONE.")
+    print()
+    
+    confirmation = input("To confirm, type 'DELETE ALL DATA NOW': ").strip()
+    
+    if confirmation == 'DELETE ALL DATA NOW':
+        with sqlite3.connect(DB_FILE) as conn:
+            # Delete all records from all tables
+            conn.execute("DELETE FROM item_links")
+            conn.execute("DELETE FROM todo_info")
+            conn.execute("DELETE FROM items")
+        
+        print(f"Successfully deleted {total_data_points} data points. Database is now empty.")
+    else:
+        print("Operation cancelled. No data was deleted.")
+
 def link_notes(note1_id, note2_id):
     """Create a link between two notes"""
-    if note1_id == note2_id:
-        print(f"Error: Cannot link a note to itself (id: {note1_id})")
-        return False
-        
+    # Verify both items are notes
     with sqlite3.connect(DB_FILE) as conn:
-        # Check if both notes exist
-        note1_exists = conn.execute("SELECT id FROM notes WHERE id=?", (note1_id,)).fetchone()
-        note2_exists = conn.execute("SELECT id FROM notes WHERE id=?", (note2_id,)).fetchone()
-        
-        if not note1_exists:
+        item1 = conn.execute("SELECT id, type FROM items WHERE id=?", (note1_id,)).fetchone()
+        item2 = conn.execute("SELECT id, type FROM items WHERE id=?", (note2_id,)).fetchone()
+
+        if not item1:
             print(f"Error: Note with ID {note1_id} does not exist")
             return False
-        if not note2_exists:
+        if not item2:
             print(f"Error: Note with ID {note2_id} does not exist")
             return False
-        
-        # Check if the link already exists (in either direction)
-        link_exists = conn.execute(
-            "SELECT id FROM note_links WHERE (note1_id=? AND note2_id=?) OR (note1_id=? AND note2_id=?)",
-            (note1_id, note2_id, note2_id, note1_id)
-        ).fetchone()
-        
-        if link_exists:
-            print(f"Notes {note1_id} and {note2_id} are already linked")
-            return True
-        
-        # Create the link (order notes in ascending order for consistency)
-        if note1_id > note2_id:
-            note1_id, note2_id = note2_id, note1_id
             
-        conn.execute(
-            "INSERT INTO note_links (note1_id, note2_id) VALUES (?, ?)",
-            (note1_id, note2_id)
-        )
-        print(f"Linked notes {note1_id} and {note2_id}")
-        return True
+        if item1[1] != 'note' or item2[1] != 'note':
+            print(f"Error: Both IDs must be notes")
+            return False
+
+    return link_items(note1_id, note2_id)
 
 def unlink_notes(note1_id, note2_id):
     """Remove a link between two notes"""
     with sqlite3.connect(DB_FILE) as conn:
         # Check if both notes exist
-        note1_exists = conn.execute("SELECT id FROM notes WHERE id=?", (note1_id,)).fetchone()
-        note2_exists = conn.execute("SELECT id FROM notes WHERE id=?", (note2_id,)).fetchone()
-        
-        if not note1_exists:
+        item1 = conn.execute("SELECT id FROM items WHERE id=? AND type='note'", (note1_id,)).fetchone()
+        item2 = conn.execute("SELECT id FROM items WHERE id=? AND type='note'", (note2_id,)).fetchone()
+
+        if not item1:
             print(f"Error: Note with ID {note1_id} does not exist")
             return False
-        if not note2_exists:
+        if not item2:
             print(f"Error: Note with ID {note2_id} does not exist")
             return False
-        
+
         # Delete the link (handle it in either direction)
         cursor = conn.execute(
-            "DELETE FROM note_links WHERE (note1_id=? AND note2_id=?) OR (note1_id=? AND note2_id=?)",
+            "DELETE FROM item_links WHERE (item1_id=? AND item2_id=?) OR (item1_id=? AND item2_id=?)",
             (note1_id, note2_id, note2_id, note1_id)
         )
-        
+
         if cursor.rowcount > 0:
             print(f"Unlinked notes {note1_id} and {note2_id}")
             return True
@@ -845,154 +736,142 @@ def unlink_notes(note1_id, note2_id):
             print(f"Notes {note1_id} and {note2_id} were not linked")
             return True
 
+def link_items(item1_id, item2_id):
+    """Create a link between two items"""
+    if item1_id == item2_id:
+        print(f"Error: Cannot link an item to itself (id: {item1_id})")
+        return False
+
+    with sqlite3.connect(DB_FILE) as conn:
+        # Check if both items exist
+        item1_exists = conn.execute("SELECT id FROM items WHERE id=?", (item1_id,)).fetchone()
+        item2_exists = conn.execute("SELECT id FROM items WHERE id=?", (item2_id,)).fetchone()
+
+        if not item1_exists:
+            print(f"Error: Item with ID {item1_id} does not exist")
+            return False
+        if not item2_exists:
+            print(f"Error: Item with ID {item2_id} does not exist")
+            return False
+
+        # Check if the link already exists (in either direction)
+        link_exists = conn.execute(
+            "SELECT id FROM item_links WHERE (item1_id=? AND item2_id=?) OR (item1_id=? AND item2_id=?)",
+            (item1_id, item2_id, item2_id, item1_id)
+        ).fetchone()
+
+        if link_exists:
+            print(f"Items {item1_id} and {item2_id} are already linked")
+            return True
+
+        # Create the link (order items in ascending order for consistency)
+        if item1_id > item2_id:
+            item1_id, item2_id = item2_id, item1_id
+
+        conn.execute(
+            "INSERT INTO item_links (item1_id, item2_id) VALUES (?, ?)",
+            (item1_id, item2_id)
+        )
+        print(f"Linked items {item1_id} and {item2_id}")
+        return True
+
 def show_journal():
     with sqlite3.connect(DB_FILE) as conn:
-        # First, find all completed root tasks
-        completed_roots = conn.execute("""
-            SELECT id FROM tasks 
-            WHERE status = 'done' AND pid IS NULL AND parent_note_id IS NULL
-        """).fetchall()
-        
-        completed_root_ids = [str(row[0]) for row in completed_roots]
-        
-        # Find all descendants of these completed roots using recursive CTE
-        if completed_root_ids:
-            exclude_query = """
-                WITH RECURSIVE task_descendants AS (
-                    -- Base case: the completed root tasks themselves
-                    SELECT id FROM tasks WHERE id IN ({})
-                    
-                    UNION ALL
-                    -- Recursive case: child tasks of tasks in the descendants
-                    SELECT t.id 
-                    FROM tasks t
-                    JOIN task_descendants td ON t.pid = td.id
-                )
-                SELECT id FROM task_descendants
-            """.format(",".join("?" * len(completed_root_ids)))
-            
-            excluded_task_ids = conn.execute(exclude_query, completed_root_ids).fetchall()
-            excluded_ids_set = set(row[0] for row in excluded_task_ids)
-        else:
-            excluded_ids_set = set()
-        
-        # Get all tasks except those that are descendants of completed root tasks
-        all_tasks = conn.execute(
-            "SELECT id,title,status,creation_date,due_date,completion_date,recur,pid FROM tasks ORDER BY creation_date ASC, id ASC"
-        ).fetchall()
-        
-        # Filter out tasks that are descendants of completed root tasks
-        tasks = [task for task in all_tasks if task[0] not in excluded_ids_set]
-
-        # get notes
-        notes = conn.execute(
-            "SELECT id,text,creation_date,task_id FROM notes ORDER BY creation_date ASC,id ASC"
+        # Get all items ordered by creation date
+        all_items = conn.execute(
+            "SELECT id, type, title, creation_date, pid FROM items ORDER BY creation_date ASC, id ASC"
         ).fetchall()
 
-    # group tasks/notes by creation_date
-    grouped = defaultdict(lambda: {"tasks": [], "notes": []})
-    for t in tasks:
-        grouped[t[3]]["tasks"].append(t)  # t[3] is creation_date
-    for n in notes:
-        if n[3]:  # attached to task
-            # handled under task display
-            pass
-        else:
-            grouped[n[2]]["notes"].append(n)
+    # group items by creation_date
+    grouped = defaultdict(lambda: {"items": []})
+    for item in all_items:
+        creation_date = item[3]  # item[3] is creation_date
+        grouped[creation_date]["items"].append(item)
 
     for day in sorted(grouped.keys()):
         print()
         print(format_date_with_day(day))
-        
-        # Build and print task tree for this day
-        day_tasks = grouped[day]["tasks"]
-        if day_tasks:
-            root_tasks, children, task_dict = build_task_tree(day_tasks)
-            for i, root_task in enumerate(root_tasks):
-                is_last = (i == len(root_tasks) - 1)
-                print_task_tree(root_task, children, task_dict, is_last, "", is_root=True)
-        
-        # show standalone notes
-        for n in grouped[day]["notes"]:
-            if not n[3]:
-                print(format_note(n, indent="\t"))
+
+        # Build and print item tree for this day
+        day_items = grouped[day]["items"]
+        if day_items:
+            root_items, children, item_dict = build_item_tree(day_items)
+            for i, root_item in enumerate(root_items):
+                is_last = (i == len(root_items) - 1)
+                print_item_tree(root_item, children, item_dict, is_last, "", is_root=True)
 
 def show_due():
     with sqlite3.connect(DB_FILE) as conn:
         # First, find all completed root tasks
         completed_roots = conn.execute("""
-            SELECT id FROM tasks 
-            WHERE status = 'done' AND pid IS NULL AND parent_note_id IS NULL
+            SELECT i.id FROM items i
+            JOIN todo_info t ON i.id = t.item_id
+            WHERE t.status = 'done' AND i.pid IS NULL
         """).fetchall()
-        
+
         completed_root_ids = [str(row[0]) for row in completed_roots]
-        
+
         # Find all descendants of these completed roots using recursive CTE
         if completed_root_ids:
             exclude_query = """
-                WITH RECURSIVE task_descendants AS (
+                WITH RECURSIVE item_descendants AS (
                     -- Base case: the completed root tasks themselves
-                    SELECT id FROM tasks WHERE id IN ({})
-                    
+                    SELECT id FROM items WHERE id IN ({})
+
                     UNION ALL
-                    -- Recursive case: child tasks of tasks in the descendants
-                    SELECT t.id 
-                    FROM tasks t
-                    JOIN task_descendants td ON t.pid = td.id
+                    -- Recursive case: child items of items in the descendants
+                    SELECT i.id
+                    FROM items i
+                    JOIN item_descendants idesc ON i.pid = idesc.id
                 )
-                SELECT id FROM task_descendants
+                SELECT id FROM item_descendants
             """.format(",".join("?" * len(completed_root_ids)))
-            
-            excluded_task_ids = conn.execute(exclude_query, completed_root_ids).fetchall()
-            excluded_ids_set = set(row[0] for row in excluded_task_ids)
+
+            excluded_item_ids = conn.execute(exclude_query, completed_root_ids).fetchall()
+            excluded_ids_set = set(row[0] for row in excluded_item_ids)
         else:
             excluded_ids_set = set()
-        
-        # Get all tasks except those that are descendants of completed root tasks
-        all_tasks = conn.execute(
-            "SELECT id,title,status,creation_date,due_date,completion_date,recur,pid FROM tasks ORDER BY id ASC"
+
+        # Get root tasks (tasks with no parent or with note as parent) that are not completed, grouped by due date
+        # Use the same root task definition as in show_task() - tasks with no parent or note as parent
+        root_items = conn.execute("""
+            SELECT i.id, i.type, i.title, i.creation_date, i.pid
+            FROM items i
+            JOIN todo_info t ON i.id = t.item_id
+            WHERE i.type = 'todo'
+              AND (i.pid IS NULL OR i.pid IN (SELECT id FROM items WHERE type = 'note'))
+              AND i.id NOT IN ({})
+            ORDER BY t.due_date ASC, i.id ASC
+        """.format(",".join("?" * len(list(excluded_ids_set))) if excluded_ids_set else "SELECT NULL WHERE 1=0", list(excluded_ids_set) if excluded_ids_set else [])
         ).fetchall()
-        
-        # Filter out tasks that are descendants of completed root tasks
-        tasks = [task for task in all_tasks if task[0] not in excluded_ids_set]
 
-        # Get all notes for tasks that will be displayed
-        task_ids = [str(task[0]) for task in tasks]
-        if task_ids:
-            notes_query = """
-                SELECT id,text,creation_date,task_id FROM notes 
-                WHERE task_id IN ({}) 
-                ORDER BY creation_date ASC,id ASC
-            """.format(",".join("?" * len(task_ids)))
-            notes = conn.execute(notes_query, task_ids).fetchall()
-        else:
-            notes = []
-
-    # Create a mapping of task_id to list of notes for that task
-    task_notes = defaultdict(list)
-    for note in notes:
-        task_notes[note[3]].append(note)  # note[3] is task_id
-
-    # Build the full tree structure first to preserve parent-child relationships
-    all_tasks = tasks
-    root_tasks, children, task_dict = build_task_tree(all_tasks)
+    # Group root items by their due date buckets
+    buckets = {
+        "Future": [],
+        "This Month": [],
+        "This Week": [],
+        "Due Tomorrow": [],
+        "Due Today": [],
+        "Overdue": [],
+        "No Due Date": []
+    }
 
     # Helper function to determine which bucket a due date belongs to
-    def get_task_bucket(due_date_str):
+    def get_item_bucket(due_date_str):
         if not due_date_str:
             return "No Due Date"
-        
+
         due = datetime.strptime(due_date_str, "%Y-%m-%d").date()
         today = datetime.now().date()
         tomorrow = today + timedelta(days=1)
-        
+
         # Calculate the end of this week (Sunday) and end of this month
         end_of_week = today + timedelta(days=(6 - today.weekday()))
         if today.month == 12:
             end_of_month = today.replace(year=today.year + 1, month=1, day=1) - timedelta(days=1)
         else:
             end_of_month = today.replace(month=today.month + 1, day=1) - timedelta(days=1)
-        
+
         if due < today:
             return "Overdue"
         elif due == today:
@@ -1006,577 +885,622 @@ def show_due():
         else:
             return "Future"
 
-    # Group root tasks by their bucket, but keep children with their parents
-    buckets = {
-        "Future": [], 
-        "This Month": [], 
-        "This Week": [], 
-        "Due Tomorrow": [], 
-        "Due Today": [], 
-        "Overdue": [], 
-        "No Due Date": []
-    }
-    
-    for root_task in root_tasks:
-        bucket_label = get_task_bucket(root_task[4])  # root_task[4] is due_date
-        buckets[bucket_label].append(root_task)
+    # For each root item, get its complete hierarchy and determine its bucket
+    for root_item in root_items:
+        # Get the bucket for this root item based on its due date
+        with sqlite3.connect(DB_FILE) as temp_conn:
+            due_date_result = temp_conn.execute(
+                "SELECT due_date FROM todo_info WHERE item_id=?",
+                (root_item[0],)
+            ).fetchone()
+
+        bucket_label = "No Due Date"
+        if due_date_result and due_date_result[0]:
+            bucket_label = get_item_bucket(due_date_result[0])
+
+        # Get complete hierarchy under this root item (including all children - notes and tasks)
+        with sqlite3.connect(DB_FILE) as temp_conn:
+            all_descendants = temp_conn.execute("""
+                WITH RECURSIVE item_tree AS (
+                    -- Base case: the root item itself
+                    SELECT id, type, title, creation_date, pid
+                    FROM items
+                    WHERE id = ?
+
+                    UNION ALL
+                    -- Recursive case: all child items (notes and tasks)
+                    SELECT i.id, i.type, i.title, i.creation_date, i.pid
+                    FROM items i
+                    JOIN item_tree it ON i.pid = it.id
+                )
+                SELECT id, type, title, creation_date, pid
+                FROM item_tree
+                ORDER BY id ASC
+            """, (root_item[0],)).fetchall()
+
+        # Build tree structure for this root with all its descendants
+        all_root_nodes, all_children, all_item_dict = build_item_tree(all_descendants)
+
+        # Add the root and its complete hierarchy to the appropriate bucket
+        if all_root_nodes:  # Should only have one root node
+            root_node = all_root_nodes[0]
+            bucket_info = {
+                'root_node': root_node,
+                'children': all_children,
+                'item_dict': all_item_dict
+            }
+            buckets[bucket_label].append(bucket_info)
 
     # Print each bucket in the correct order
     for label in ["Future", "This Month", "This Week", "Due Tomorrow", "Due Today", "Overdue", "No Due Date"]:
         if buckets[label]:
             print(f"\n{label}")
-            # Print tasks in this bucket maintaining their tree structure
-            for i, root_task in enumerate(buckets[label]):
+            # Print items in this bucket maintaining their tree structure
+            for i, bucket_info in enumerate(buckets[label]):
                 is_last = (i == len(buckets[label]) - 1)
-                print_task_tree(root_task, children, task_dict, is_last, "", is_root=True)
-
+                print_item_tree(
+                    bucket_info['root_node'], 
+                    bucket_info['children'], 
+                    bucket_info['item_dict'], 
+                    is_last, 
+                    "", 
+                    is_root=True
+                
+                )
 def show_task():
     with sqlite3.connect(DB_FILE) as conn:
-        # Get only incomplete root tasks (tasks that have no parent and are not done)
-        root_tasks = conn.execute(
-            "SELECT id,title,status,creation_date,due_date,completion_date,recur,pid FROM tasks WHERE status != 'done' AND pid IS NULL AND parent_note_id IS NULL ORDER BY creation_date ASC"
-        ).fetchall()
-        
-        # Group root tasks by creation_date
+        # Get only incomplete root tasks (items that have no parent OR have a note as parent and are not done)
+        # A root task is defined as: a task which does not have any parent or which does not have a task as parent
+        # So we want tasks where pid IS NULL OR where the parent item has type 'note'
+        root_items = conn.execute("""
+            SELECT i.id, i.type, i.title, i.creation_date, i.pid
+            FROM items i
+            LEFT JOIN todo_info t ON i.id = t.item_id
+            WHERE i.type = 'todo' 
+              AND (i.pid IS NULL OR i.pid IN (SELECT id FROM items WHERE type = 'note'))
+              AND (t.status != 'done' OR t.status IS NULL)
+            ORDER BY i.creation_date ASC
+        """).fetchall()
+
+        # Group root items by creation_date
         grouped = defaultdict(list)
-        for t in root_tasks:
-            grouped[t[3]].append(t)  # t[3] is creation_date
+        for item in root_items:
+            creation_date = item[3]  # item[3] is creation_date
+            grouped[creation_date].append(item)
 
     for day in sorted(grouped.keys()):
         print()
         print(format_date_with_day(day))
-        
-        # For each root task of this day, get its complete hierarchy and print it
-        day_root_tasks = grouped[day]
-        for i, root_task in enumerate(day_root_tasks):
-            is_last = (i == len(day_root_tasks) - 1)
-            
-            # Get the complete tree under this root task (including completed children)
+
+        # For each root item of this day, get its complete hierarchy and print it
+        day_root_items = grouped[day]
+        for i, root_item in enumerate(day_root_items):
+            is_last = (i == len(day_root_items) - 1)
+
+            # Get the complete tree under this root item (including completed children)
             with sqlite3.connect(DB_FILE) as temp_conn:
                 all_descendants = temp_conn.execute("""
-                    WITH RECURSIVE task_tree AS (
-                        -- Base case: the root task itself
-                        SELECT id, title, status, creation_date, due_date, completion_date, recur, pid, parent_note_id
-                        FROM tasks
+                    WITH RECURSIVE item_tree AS (
+                        -- Base case: the root item itself
+                        SELECT id, type, title, creation_date, pid
+                        FROM items
                         WHERE id = ?
-                        
-                        UNION ALL
-                        -- Recursive case: all child tasks (including completed ones)
-                        SELECT t.id, t.title, t.status, t.creation_date, t.due_date, t.completion_date, t.recur, t.pid, t.parent_note_id
-                        FROM tasks t
-                        JOIN task_tree tt ON t.pid = tt.id OR t.parent_note_id = tt.id
-                    )
-                    SELECT id, title, status, creation_date, due_date, completion_date, recur, pid
-                    FROM task_tree
-                    ORDER BY id
-                """, (root_task[0],)).fetchall()  # root_task[0] is id
 
-            # Build the tree structure including all tasks (done and not done)
-            root_nodes, children, task_dict = build_task_tree(all_descendants)
-            
+                        UNION ALL
+                        -- Recursive case: all child items
+                        SELECT i.id, i.type, i.title, i.creation_date, i.pid
+                        FROM items i
+                        JOIN item_tree it ON i.pid = it.id
+                    )
+                    SELECT id, type, title, creation_date, pid
+                    FROM item_tree
+                    ORDER BY id
+                """, (root_item[0],)).fetchall()  # root_item[0] is id
+
+            # Build the tree structure including all items (done and not done)
+            root_nodes, children, item_dict = build_item_tree(all_descendants)
+
             # Print each root node in this hierarchy (should just be the main root we started with)
-            for j, task_node in enumerate(root_nodes):
-                task_is_last = (j == len(root_nodes) - 1) and is_last
-                print_task_tree(task_node, children, task_dict, task_is_last, "\t", True)
+            for j, item_node in enumerate(root_nodes):
+                item_is_last = (j == len(root_nodes) - 1) and is_last
+                print_item_tree(item_node, children, item_dict, item_is_last, "\t", True)
 
 def show_note():
     with sqlite3.connect(DB_FILE) as conn:
-        # Get all root notes (notes that have no parent note and are not attached to any task) with their tasks (if any)
-        # According to the requirement: Root notes are the ones which do not have parent task and parent note
-        # This means notes that are not children of another note (parent_note_id IS NULL)
-        # AND notes that are not attached to any task (task_id IS NULL)
-        root_notes = conn.execute("""
-            SELECT n.id, n.text, n.creation_date, n.task_id, t.title
-            FROM notes n
-            LEFT JOIN tasks t ON n.task_id = t.id
-            WHERE n.parent_note_id IS NULL AND n.task_id IS NULL
-            ORDER BY n.creation_date ASC, n.id ASC
+        # Get all root items (items that have no parent) for the note view
+        # This includes both notes and tasks that are root level
+        root_items = conn.execute("""
+            SELECT id, type, title, creation_date, pid
+            FROM items
+            WHERE pid IS NULL
+            ORDER BY creation_date ASC, id ASC
         """).fetchall()
 
-        # Group root notes by creation_date
+        # Group root items by creation_date
         grouped = defaultdict(list)
-        for n in root_notes:
-            grouped[n[2]].append(n)  # n[2] is creation_date
+        for item in root_items:
+            creation_date = item[3]  # item[3] is creation_date
+            grouped[creation_date].append(item)
 
     for day in sorted(grouped.keys()):
         print()
         print(format_date_with_day(day))
-        for note in grouped[day]:
-            nid, text, creation_date, task_id, task_title = note
-            if task_id:
-                print(Fore.YELLOW + f"\t> {text} (id: {nid}) ({creation_date}) (for task: {task_id}. {task_title})" + Style.RESET_ALL)
-            else:
-                print(Fore.YELLOW + f"\t> {text} (id: {nid}) ({creation_date})" + Style.RESET_ALL)
-            
-            # Print children of this root note (recursive hierarchy)
-            print_note_children(conn, nid, "\t\t")
 
-def print_note_children(conn, parent_note_id, indent):
-    """Helper function to recursively print child notes and tasks of a note"""
-    # Get child notes of this note
-    child_notes = conn.execute("""
-        SELECT n.id, n.text, n.creation_date, n.task_id, t.title
-        FROM notes n
-        LEFT JOIN tasks t ON n.task_id = t.id
-        WHERE n.parent_note_id = ?
-        ORDER BY n.creation_date ASC, n.id ASC
-    """, (parent_note_id,)).fetchall()
-    
-    # Print child notes with current indentation
-    for child_note in child_notes:
-        nid, text, creation_date, task_id, task_title = child_note
-        if task_id:
-            print(Fore.YELLOW + f"{indent}> {text} (id: {nid}) ({creation_date}) (for task: {task_id}. {task_title})" + Style.RESET_ALL)
-        else:
-            print(Fore.YELLOW + f"{indent}> {text} (id: {nid}) ({creation_date})" + Style.RESET_ALL)
-        
-        # Recursively print children of this child note (grandchildren, etc.)
-        print_note_children(conn, nid, indent + "\t")
-    
-    # Get child tasks of this note
-    child_tasks = conn.execute("""
-        SELECT id, title, status, creation_date, due_date, completion_date, recur, pid
-        FROM tasks
-        WHERE parent_note_id = ?
+        # For each root item of this day, get its complete hierarchy and print it
+        day_root_items = grouped[day]
+        for i, root_item in enumerate(day_root_items):
+            is_last = (i == len(day_root_items) - 1)
+
+            # Get the complete tree under this root item (including all children)
+            with sqlite3.connect(DB_FILE) as temp_conn:
+                all_descendants = temp_conn.execute("""
+                    WITH RECURSIVE item_tree AS (
+                        -- Base case: the root item itself
+                        SELECT id, type, title, creation_date, pid
+                        FROM items
+                        WHERE id = ?
+
+                        UNION ALL
+                        -- Recursive case: all child items
+                        SELECT i.id, i.type, i.title, i.creation_date, i.pid
+                        FROM items i
+                        JOIN item_tree it ON i.pid = it.id
+                    )
+                    SELECT id, type, title, creation_date, pid
+                    FROM item_tree
+                    ORDER BY id ASC
+                """, (root_item[0],)).fetchall()  # root_item[0] is id
+
+            # Build the tree structure including all items (notes and tasks)
+            root_nodes, children, item_dict = build_item_tree(all_descendants)
+
+            # Print each root node in this hierarchy (should just be the main root we started with)
+            for j, item_node in enumerate(root_nodes):
+                item_is_last = (j == len(root_nodes) - 1) and is_last
+                print_item_tree(item_node, children, item_dict, item_is_last, "\t", True)
+
+def print_item_children(conn, parent_item_id, indent):
+    """Helper function to recursively print child items of an item"""
+    # Get child items of this item
+    child_items = conn.execute("""
+        SELECT id, type, title, creation_date, pid
+        FROM items
+        WHERE pid = ?
         ORDER BY creation_date ASC, id ASC
-    """, (parent_note_id,)).fetchall()
-    
-    # Print child tasks with current indentation
-    for child_task in child_tasks:
-        tid, title, status, creation_date, due_date, completion_date, recur, pid = child_task
-        checkbox = "[x]" if status == "done" else "[ ]"
+    """, (parent_item_id,)).fetchall()
 
-        # Color based on status
-        if status == "doing":
-            task_text = "\t" + Back.YELLOW + Fore.BLACK + f"{checkbox} {title} (id:{tid})" + Style.RESET_ALL
-        elif status == "waiting":
-            task_text = "\t" + Back.LIGHTBLACK_EX + Fore.WHITE + f"{checkbox} {title} (id:{tid})" + Style.RESET_ALL
-        elif status == "done":
-            task_text = "\t" + Fore.GREEN + f"{checkbox} {title} (id:{tid})" + Style.RESET_ALL
-        else:  # todo
-            task_text = "\t" + f"{checkbox} {title}  (id:{tid})"
+    # Print child items with current indentation
+    for child_item in child_items:
+        item_id, item_type, title, creation_date, pid = child_item
+        if item_type == 'note':
+            print(Fore.YELLOW + f"{indent}> {title} (id:{item_id}) ({creation_date})" + Style.RESET_ALL)
 
-        # Show recur pattern if it exists
-        if recur:
-            task_text += f" (recur: {recur})"
-
-        # Show due date
-        due = datetime.strptime(due_date, "%Y-%m-%d").date()
-        today = datetime.now().date()
-        if status != "done":
-            if due < today:
-                task_text += Fore.RED + f" (due: {format_date_with_day(due_date)})"
-            elif due == today:
-                task_text += Fore.CYAN + f" (due: {format_date_with_day(due_date)})"
+            # Recursively print children of this child item (grandchildren, etc.)
+            print_item_children(conn, item_id, indent + "\t")
+        elif item_type == 'todo':
+            # For child todos
+            with sqlite3.connect(DB_FILE) as temp_conn:
+                todo_info = temp_conn.execute(
+                    "SELECT status, due_date, completion_date, recur FROM todo_info WHERE item_id=?",
+                    (item_id,)
+                ).fetchone()
+                
+            if todo_info:
+                status, due_date, completion_date, recur = todo_info
             else:
-                task_text += f" (due: {format_date_with_day(due_date)})"
+                # Default values
+                status, due_date, completion_date, recur = 'todo', creation_date, None, None
+                
+            checkbox = "[x]" if status == "done" else "[ ]"
 
-        print(Fore.YELLOW + f"{indent}{task_text}" + Style.RESET_ALL)
-        
-        # Also display any notes attached to this child task
-        task_notes = conn.execute("""
-            SELECT n.id, n.text, n.creation_date, n.task_id, t.title
-            FROM notes n
-            LEFT JOIN tasks t ON n.task_id = t.id
-            WHERE n.task_id = ?
-            ORDER BY n.creation_date ASC, n.id ASC
-        """, (tid,)).fetchall()
-        
-        for task_note in task_notes:
-            task_note_id, task_note_text, task_note_date, task_note_task_id, task_note_task_title = task_note
-            if task_note_task_id:
-                print(Fore.YELLOW + f"{indent}\t\t> {task_note_text} (id:{task_note_id}) ({task_note_date}) (for task: {task_note_task_id}. {task_note_task_title})" + Style.RESET_ALL)
-            else:
-                print(Fore.YELLOW + f"{indent}\t\t> {task_note_text} (id:{task_note_id}) ({task_note_date})" + Style.RESET_ALL)
+            # Color based on status
+            if status == "doing":
+                task_text = Back.YELLOW + Fore.BLACK + f"{checkbox} {title} (id:{item_id})" + Style.RESET_ALL
+            elif status == "waiting":
+                task_text = Back.LIGHTBLACK_EX + Fore.WHITE + f"{checkbox} {title} (id:{item_id})" + Style.RESET_ALL
+            elif status == "done":
+                task_text = Fore.GREEN + f"{checkbox} {title} (id:{item_id})" + Style.RESET_ALL
+            else:  # todo
+                task_text = f"{checkbox} {title}  (id:{item_id})"
 
-def print_note_children(conn, parent_note_id, indent):
-    """Helper function to recursively print child notes and tasks of a note"""
-    # Get child notes of this note
-    child_notes = conn.execute("""
-        SELECT n.id, n.text, n.creation_date, n.task_id, t.title
-        FROM notes n
-        LEFT JOIN tasks t ON n.task_id = t.id
-        WHERE n.parent_note_id = ?
-        ORDER BY n.creation_date ASC, n.id ASC
-    """, (parent_note_id,)).fetchall()
-    
-    # Print child notes with current indentation
-    for child_note in child_notes:
-        nid, text, creation_date, task_id, task_title = child_note
-        if task_id:
-            print(Fore.YELLOW + f"{indent}> {text} (id: {nid}) ({creation_date}) (for task: {task_id}. {task_title})" + Style.RESET_ALL)
-        else:
-            print(Fore.YELLOW + f"{indent}> {text} (id: {nid}) ({creation_date})" + Style.RESET_ALL)
-        
-        # Recursively print children of this child note (grandchildren, etc.)
-        print_note_children(conn, nid, indent + "\t")
-    
-    # Get child tasks of this note
-    child_tasks = conn.execute("""
-        SELECT id, title, status, creation_date, due_date, completion_date, recur, pid
-        FROM tasks
-        WHERE parent_note_id = ?
-        ORDER BY creation_date ASC, id ASC
-    """, (parent_note_id,)).fetchall()
-    
-    # Print child tasks with current indentation
-    for child_task in child_tasks:
-        tid, title, status, creation_date, due_date, completion_date, recur, pid = child_task
-        checkbox = "[x]" if status == "done" else "[ ]"
+            # Show recur pattern if it exists
+            if recur:
+                task_text += f" (recur: {recur})"
 
-        # Color based on status
-        if status == "doing":
-            task_text = "\t" + Back.YELLOW + Fore.BLACK + f"{checkbox} {title} (id:{tid})" + Style.RESET_ALL
-        elif status == "waiting":
-            task_text = "\t" + Back.LIGHTBLACK_EX + Fore.WHITE + f"{checkbox} {title} (id:{tid})" + Style.RESET_ALL
-        elif status == "done":
-            task_text = "\t" + Fore.GREEN + f"{checkbox} {title} (id:{tid})" + Style.RESET_ALL
-        else:  # todo
-            task_text = "\t" + f"{checkbox} {title}  (id:{tid})"
+            # Show due date
+            due = datetime.strptime(due_date, "%Y-%m-%d").date()
+            today = datetime.now().date()
+            if status != "done":
+                if due < today:
+                    task_text += Fore.RED + f" (due: {format_date_with_day(due_date)})"
+                elif due == today:
+                    task_text += Fore.CYAN + f" (due: {format_date_with_day(due_date)})"
+                else:
+                    task_text += f" (due: {format_date_with_day(due_date)})"
 
-        # Show recur pattern if it exists
-        if recur:
-            task_text += f" (recur: {recur})"
-
-        # Show due date
-        due = datetime.strptime(due_date, "%Y-%m-%d").date()
-        today = datetime.now().date()
-        if status != "done":
-            if due < today:
-                task_text += Fore.RED + f" (due: {format_date_with_day(due_date)})"
-            elif due == today:
-                task_text += Fore.CYAN + f" (due: {format_date_with_day(due_date)})"
-            else:
-                task_text += f" (due: {format_date_with_day(due_date)})"
-
-        print(Fore.YELLOW + f"{indent}{task_text}" + Style.RESET_ALL)
-        
-        # Also display any notes attached to this child task
-        task_notes = conn.execute("""
-            SELECT n.id, n.text, n.creation_date, n.task_id, t.title
-            FROM notes n
-            LEFT JOIN tasks t ON n.task_id = t.id
-            WHERE n.task_id = ?
-            ORDER BY n.creation_date ASC, n.id ASC
-        """, (tid,)).fetchall()
-        
-        for task_note in task_notes:
-            task_note_id, task_note_text, task_note_date, task_note_task_id, task_note_task_title = task_note
-            if task_note_task_id:
-                print(Fore.YELLOW + f"{indent}\t\t> {task_note_text} (id:{task_note_id}) ({task_note_date}) (for task: {task_note_task_id}. {task_note_task_title})" + Style.RESET_ALL)
-            else:
-                print(Fore.YELLOW + f"{indent}\t\t> {task_note_text} (id:{task_note_id}) ({task_note_date})" + Style.RESET_ALL)
+            print(Fore.YELLOW + f"{indent}{task_text}" + Style.RESET_ALL)
 
 def show_note_details(note_id):
-    """Show details of a specific note, including child notes and tasks, and linked notes"""
+    """Show details of a specific note, including child items and linked items"""
     with sqlite3.connect(DB_FILE) as conn:
-        # Get the specific note
-        note = conn.execute("""
-            SELECT n.id, n.text, n.creation_date, n.task_id, t.title
-            FROM notes n
-            LEFT JOIN tasks t ON n.task_id = t.id
-            WHERE n.id=?
+        # Get the specific item
+        item = conn.execute("""
+            SELECT id, type, title, creation_date, pid
+            FROM items
+            WHERE id=?
         """, (note_id,)).fetchone()
-        
-        if not note:
-            print(f"Error: Note with ID {note_id} does not exist")
+
+        if not item:
+            print(f"Error: Item with ID {note_id} does not exist")
             return
-        
-        nid, text, creation_date, task_id, task_title = note
-        
+
+        item_id, item_type, title, creation_date, pid = item
+
+        if item_type != 'note':
+            print(f"Error: Item with ID {note_id} is not a note")
+            return
+
         # Print the note text in consistent format
-        if task_id:
-            print(Fore.YELLOW + f"- {text} (id:{nid}) ({creation_date}) (for task: {task_id}. {task_title})" + Style.RESET_ALL)
-        else:
-            print(Fore.YELLOW + f"- {text} (id:{nid}) ({creation_date})" + Style.RESET_ALL)
-        
-        # Get child notes (notes that have this note as parent)
-        child_notes = conn.execute("""
-            SELECT id, text, creation_date, task_id
-            FROM notes
-            WHERE parent_note_id = ?
+        print(Fore.YELLOW + f"- {title} (id:{item_id}) ({creation_date})" + Style.RESET_ALL)
+
+        # Get child items (items that have this note as parent)
+        child_items = conn.execute("""
+            SELECT id, type, title, creation_date, pid
+            FROM items
+            WHERE pid = ?
             ORDER BY creation_date ASC, id ASC
         """, (note_id,)).fetchall()
-        
-        # Get child tasks (tasks that have this note as parent)
-        child_tasks = conn.execute("""
-            SELECT id, title, status, creation_date, due_date, completion_date, recur, pid
-            FROM tasks
-            WHERE parent_note_id = ?
-            ORDER BY creation_date ASC, id ASC
-        """, (note_id,)).fetchall()
-        
-        # Print child notes and tasks
-        has_children = len(child_notes) > 0 or len(child_tasks) > 0
+
+        # Print child items
+        has_children = len(child_items) > 0
         if has_children:
-            # Print child notes first
-            for child_note in child_notes:
-                child_note_id, child_note_text, child_creation_date, child_task_id = child_note
-                if child_task_id:
-                    print(Fore.YELLOW + f"\t> {child_note_text} (id:{child_note_id}) ({child_creation_date}) (for task: {child_task_id})" + Style.RESET_ALL)
-                else:
-                    print(Fore.YELLOW + f"\t> {child_note_text} (id:{child_note_id}) ({child_creation_date})" + Style.RESET_ALL)
-                
-                # Recursively display children of this child note (if any)
-                show_child_note_details(conn, child_note_id, "\t\t")
-            
-            # Print child tasks
-            for child_task in child_tasks:
-                tid, title, status, creation_date, due_date, completion_date, recur, pid = child_task
-                checkbox = "[x]" if status == "done" else "[ ]"
-
-                # Color based on status
-                if status == "doing":
-                    task_text = Back.YELLOW + Fore.BLACK + f"{checkbox} {title} (id:{tid})" + Style.RESET_ALL
-                elif status == "waiting":
-                    task_text = Back.LIGHTBLACK_EX + Fore.WHITE + f"{checkbox} {title} (id:{tid})" + Style.RESET_ALL
-                elif status == "done":
-                    task_text = Fore.GREEN + f"{checkbox} {title} (id:{tid})" + Style.RESET_ALL
-                else:  # todo
-                    task_text = f"{checkbox} {title}  (id:{tid})"
-
-                # Show recur pattern if it exists
-                if recur:
-                    task_text += f" (recur: {recur})"
-
-                # Show due date
-                due = datetime.strptime(due_date, "%Y-%m-%d").date()
-                today = datetime.now().date()
-                if status != "done":
-                    if due < today:
-                        task_text += Fore.RED + f" (due: {format_date_with_day(due_date)})"
-                    elif due == today:
-                        task_text += Fore.CYAN + f" (due: {format_date_with_day(due_date)})"
+            for child_item in child_items:
+                child_item_id, child_item_type, child_title, child_creation_date, child_pid = child_item
+                if child_item_type == 'note':
+                    print(Fore.YELLOW + f"\t> {child_title} (id:{child_item_id}) ({child_creation_date})" + Style.RESET_ALL)
+                    # Recursively display children of this child note (if any)
+                    show_child_item_details(conn, child_item_id, "\t\t")
+                elif child_item_type == 'todo':
+                    # For child todos
+                    with sqlite3.connect(DB_FILE) as temp_conn:
+                        todo_info = temp_conn.execute(
+                            "SELECT status, due_date, completion_date, recur FROM todo_info WHERE item_id=?",
+                            (child_item_id,)
+                        ).fetchone()
+                        
+                    if todo_info:
+                        status, due_date, completion_date, recur = todo_info
                     else:
-                        task_text += f" (due: {format_date_with_day(due_date)})"
+                        # Default values
+                        status, due_date, completion_date, recur = 'todo', child_creation_date, None, None
+                        
+                    checkbox = "[x]" if status == "done" else "[ ]"
 
-                print(Fore.YELLOW + f"\t{task_text}" + Style.RESET_ALL)
-                
-                # Also display any notes attached to this child task
-                task_notes = conn.execute("""
-                    SELECT id, text, creation_date, task_id
-                    FROM notes
-                    WHERE task_id = ?
-                    ORDER BY creation_date ASC, id ASC
-                """, (tid,)).fetchall()
-                
-                for task_note in task_notes:
-                    task_note_id, task_note_text, task_note_date, _ = task_note
-                    print(Fore.YELLOW + f"\t\t> {task_note_text} (id:{task_note_id}) ({task_note_date})" + Style.RESET_ALL)
-        
-        # Get linked notes with their task information and creation dates
-        linked_notes = conn.execute("""
-            SELECT nl.note1_id, nl.note2_id, n1.text as note1_text, n2.text as note2_text, 
-                   n1.task_id as note1_task_id, n2.task_id as note2_task_id,
-                   n1.creation_date as note1_creation_date, n2.creation_date as note2_creation_date,
-                   t1.title as task1_title, t2.title as task2_title
-            FROM note_links nl
-            JOIN notes n1 ON (nl.note1_id = n1.id)
-            JOIN notes n2 ON (nl.note2_id = n2.id)
-            LEFT JOIN tasks t1 ON (n1.task_id = t1.id)
-            LEFT JOIN tasks t2 ON (n2.task_id = t2.id)
-            WHERE nl.note1_id = ? OR nl.note2_id = ?
+                    # Color based on status
+                    if status == "doing":
+                        task_text = Back.YELLOW + Fore.BLACK + f"{checkbox} {child_title} (id:{child_item_id})" + Style.RESET_ALL
+                    elif status == "waiting":
+                        task_text = Back.LIGHTBLACK_EX + Fore.WHITE + f"{child_title} (id:{child_item_id})" + Style.RESET_ALL
+                    elif status == "done":
+                        task_text = Fore.GREEN + f"{child_title} (id:{child_item_id})" + Style.RESET_ALL
+                    else:  # todo
+                        task_text = f"{checkbox} {child_title}  (id:{child_item_id})"
+
+                    # Show recur pattern if it exists
+                    if recur:
+                        task_text += f" (recur: {recur})"
+
+                    # Show due date
+                    due = datetime.strptime(due_date, "%Y-%m-%d").date()
+                    today = datetime.now().date()
+                    if status != "done":
+                        if due < today:
+                            task_text += Fore.RED + f" (due: {format_date_with_day(due_date)})"
+                        elif due == today:
+                            task_text += Fore.CYAN + f" (due: {format_date_with_day(due_date)})"
+                        else:
+                            task_text += f" (due: {format_date_with_day(due_date)})"
+
+                    print(Fore.YELLOW + f"\t{task_text}" + Style.RESET_ALL)
+
+        # Get linked items
+        linked_items = conn.execute("""
+            SELECT il.item1_id, il.item2_id, i1.title as item1_title, i2.title as item2_title,
+                   i1.type as item1_type, i2.type as item2_type,
+                   i1.creation_date as item1_creation_date, i2.creation_date as item2_creation_date
+            FROM item_links il
+            JOIN items i1 ON (il.item1_id = i1.id)
+            JOIN items i2 ON (il.item2_id = i2.id)
+            WHERE il.item1_id = ? OR il.item2_id = ?
         """, (note_id, note_id)).fetchall()
-        
-        # Print linked notes in consistent format
-        if linked_notes:
-            print(Fore.CYAN + f"\nLinked notes:" + Style.RESET_ALL)
-            for link in linked_notes:
-                # Determine which note is the other one (not the one we're viewing)
-                if link[0] == note_id:  # note1_id is the current note
-                    other_note_id = link[1]
-                    other_note_text = link[3]  # note2_text
-                    other_task_id = link[5]   # note2_task_id
-                    other_creation_date = link[7] # note2_creation_date
-                    other_task_title = link[9] # task2_title
-                else:  # note2_id is the current note
-                    other_note_id = link[0]
-                    other_note_text = link[2]  # note1_text
-                    other_task_id = link[4]   # note1_task_id
-                    other_creation_date = link[6] # note1_creation_date
-                    other_task_title = link[8] # task1_title
-                
-                # Format the linked note consistently
-                if other_task_id and other_task_title:
-                    print(Fore.CYAN + f"  - {other_note_text} (id:{other_note_id}) ({other_creation_date}) (for task: {other_task_id}. {other_task_title})" + Style.RESET_ALL)
-                else:
-                    print(Fore.CYAN + f"  - {other_note_text} (id:{other_note_id}) ({other_creation_date})" + Style.RESET_ALL)
+
+        # Print linked items in consistent format
+        if linked_items:
+            print(Fore.CYAN + f"\nLinked items:" + Style.RESET_ALL)
+            for link in linked_items:
+                # Determine which item is the other one (not the one we're viewing)
+                if link[0] == note_id:  # item1_id is the current note
+                    other_item_id = link[1]
+                    other_item_title = link[3]  # item2_title
+                    other_item_type = link[5]   # item2_type
+                    other_creation_date = link[7] # item2_creation_date
+                else:  # item2_id is the current note
+                    other_item_id = link[0]
+                    other_item_title = link[2]  # item1_title
+                    other_item_type = link[4]   # item1_type
+                    other_creation_date = link[6] # item1_creation_date
+
+                # Format the linked item consistently
+                print(Fore.CYAN + f"  - {other_item_title} (id:{other_item_id}, type:{other_item_type}) ({other_creation_date})" + Style.RESET_ALL)
         else:
             if not has_children:
-                print(Fore.CYAN + f"\nNo linked notes found." + Style.RESET_ALL)
+                print(Fore.CYAN + f"\nNo linked items found." + Style.RESET_ALL)
 
-def show_child_note_details(conn, note_id, indent_prefix):
-    """Helper function to recursively display child notes of a note"""
-    # Get child notes of this note
-    child_notes = conn.execute("""
-        SELECT id, text, creation_date, task_id
-        FROM notes
-        WHERE parent_note_id = ?
+def show_child_item_details(conn, item_id, indent_prefix):
+    """Helper function to recursively display child items of an item"""
+    # Get child items of this item
+    child_items = conn.execute("""
+        SELECT id, type, title, creation_date, pid
+        FROM items
+        WHERE pid = ?
         ORDER BY creation_date ASC, id ASC
-    """, (note_id,)).fetchall()
+    """, (item_id,)).fetchall()
+
+    # Print child items with additional indentation
+    for child_item in child_items:
+        item_id, item_type, child_title, child_creation_date, child_pid = child_item
+        if item_type == 'note':
+            print(Fore.YELLOW + f"{indent_prefix}> {child_title} (id:{item_id}) ({child_creation_date})" + Style.RESET_ALL)
+
+            # Recursively display children of this child item (if any)
+            show_child_item_details(conn, item_id, indent_prefix + "\t")
+        elif item_type == 'todo':
+            # For child todos
+            with sqlite3.connect(DB_FILE) as temp_conn:
+                todo_info = temp_conn.execute(
+                    "SELECT status, due_date, completion_date, recur FROM todo_info WHERE item_id=?",
+                    (item_id,)
+                ).fetchone()
+                
+            if todo_info:
+                status, due_date, completion_date, recur = todo_info
+            else:
+                # Default values
+                status, due_date, completion_date, recur = 'todo', child_creation_date, None, None
+                
+            checkbox = "[x]" if status == "done" else "[ ]"
+
+            # Color based on status
+            if status == "doing":
+                task_text = Back.YELLOW + Fore.BLACK + f"{checkbox} {child_title} (id:{item_id})" + Style.RESET_ALL
+            elif status == "waiting":
+                task_text = Back.LIGHTBLACK_EX + Fore.WHITE + f"{child_title} (id:{item_id})" + Style.RESET_ALL
+            elif status == "done":
+                task_text = Fore.GREEN + f"{child_title} (id:{item_id})" + Style.RESET_ALL
+            else:  # todo
+                task_text = f"{checkbox} {child_title}  (id:{item_id})"
+
+            # Show recur pattern if it exists
+            if recur:
+                task_text += f" (recur: {recur})"
+
+            # Show due date
+            due = datetime.strptime(due_date, "%Y-%m-%d").date()
+            today = datetime.now().date()
+            if status != "done":
+                if due < today:
+                    task_text += Fore.RED + f" (due: {format_date_with_day(due_date)})"
+                elif due == today:
+                    task_text += Fore.CYAN + f" (due: {format_date_with_day(due_date)})"
+                else:
+                    task_text += f" (due: {format_date_with_day(due_date)})"
+
+            print(Fore.YELLOW + f"{indent_prefix}{task_text}" + Style.RESET_ALL)
+
+def add_item_with_details(title, item_type, due_date=None, parent_id=None):
+    """Add an item with specific details
     
-    # Print child notes with additional indentation
-    for child_note in child_notes:
-        child_note_id, child_note_text, child_creation_date, child_task_id = child_note
-        if child_task_id:
-            print(Fore.YELLOW + f"{indent_prefix}> {child_note_text} (id:{child_note_id}) ({child_creation_date}) (for task: {child_task_id})" + Style.RESET_ALL)
-        else:
-            print(Fore.YELLOW + f"{indent_prefix}> {child_note_text} (id:{child_note_id}) ({child_creation_date})" + Style.RESET_ALL)
+    Args:
+        title (str): The title/text of the item
+        item_type (str): 'todo' or 'note'
+        due_date (str, optional): Due date in YYYY-MM-DD format for todos
+        parent_id (int, optional): ID of parent item if this is a child
+    
+    Returns:
+        int: The ID of the newly created item
+    """
+    today = datetime.now().date().strftime("%Y-%m-%d")
+    if not due_date:
+        due_date = today
+    
+    with sqlite3.connect(DB_FILE) as conn:
+        cursor = conn.execute(
+            "INSERT INTO items (type, title, creation_date, pid) VALUES (?, ?, ?, ?)",
+            (item_type, title, today, parent_id)
+        )
+        item_id = cursor.lastrowid
         
-        # Recursively display children of this child note (if any)
-        show_child_note_details(conn, child_note_id, indent_prefix + "\t")
+        # For todo items, add entry in todo_info table with specific due date
+        if item_type == 'todo':
+            conn.execute(
+                "INSERT INTO todo_info (item_id, status, due_date) VALUES (?, 'todo', ?)",
+                (item_id, due_date)
+            )
+    
+    return item_id
+
+def add_item_with_parent(title, item_type, parent_id):
+    """Add an item with a parent"""
+    return add_item(title, item_type, parent_id)
+
+def search_tasks_and_notes(search_text):
+    """Search for tasks and notes containing the search text (supports wildcards: * and ?)"""
+    # Convert user-friendly wildcards to SQL LIKE patterns
+    # * -> % (matches any sequence of characters)
+    # ? -> _ (matches any single character)
+    sql_search_text = search_text.replace("*", "%").replace("?", "_")
+
+    with sqlite3.connect(DB_FILE) as conn:
+        # Search in items (title column)
+        items = conn.execute(
+            """
+            SELECT id, type, title, creation_date, pid
+            FROM items
+            WHERE title LIKE ?
+            ORDER BY creation_date ASC,id ASC
+            """,
+            (f"%{sql_search_text}%",)
+        ).fetchall()
+
+    # Group by creation_date
+    grouped = defaultdict(lambda: {"items": []})
+
+    # Add items to grouped dict
+    for item in items:
+        grouped[item[3]]["items"].append(item)  # item[3] is creation_date
+
+    return grouped, items
+
+def display_search_results(grouped):
+    """Display search results in the same format as the default journal view"""
+    has_results = any(grouped[day]["items"] for day in grouped)
+
+    if not has_results:
+        print("No matching tasks or notes found.")
+        return
+
+    # Get all items to properly display them
+    with sqlite3.connect(DB_FILE) as conn:
+        all_items = conn.execute(
+            "SELECT id, type, title, creation_date, pid FROM items ORDER BY creation_date ASC,id ASC"
+        ).fetchall()
+
+    for day in sorted(grouped.keys()):
+        items_for_day = grouped[day]["items"]
+
+        if items_for_day:
+            print()
+            print(format_date_with_day(day))
+
+            # Build and print item tree for this day
+            if items_for_day:
+                root_items, children, item_dict = build_item_tree(items_for_day)
+                for i, root_item in enumerate(root_items):
+                    is_last = (i == len(root_items) - 1)
+                    print_item_tree(root_item, children, item_dict, is_last, "", is_root=True)
 
 def show_completed_tasks():
     with sqlite3.connect(DB_FILE) as conn:
-        tasks = conn.execute("""
-            SELECT id, title, status, creation_date, due_date, completion_date, recur, pid
-            FROM tasks 
-            WHERE status = 'done' AND completion_date IS NOT NULL
-            ORDER BY completion_date ASC, id ASC
+        items = conn.execute("""
+            SELECT i.id, i.type, i.title, i.creation_date, i.pid
+            FROM items i
+            JOIN todo_info t ON i.id = t.item_id
+            WHERE i.type = 'todo' AND t.status = 'done' AND t.completion_date IS NOT NULL
+            ORDER BY t.completion_date ASC, i.id ASC
         """).fetchall()
-        
-        # Get all notes for tasks that will be displayed
-        if tasks:
-            task_ids = [str(task[0]) for task in tasks]
-            notes_query = """
-                SELECT id, text, creation_date, task_id 
-                FROM notes 
-                WHERE task_id IN ({})
-                ORDER BY creation_date ASC, id ASC
-            """.format(",".join("?" * len(task_ids)))
-            notes = conn.execute(notes_query, task_ids).fetchall()
-        else:
-            notes = []
 
-    # Group tasks by completion date
-    grouped = defaultdict(list)
-    for t in tasks:
-        completion_date = t[5]  # completion_date
-        grouped[completion_date].append(t)
-    
-    # Display tasks grouped by completion date
+        # Group items by completion date
+        grouped = defaultdict(list)
+        for item in items:
+            # Get the completion date for this item
+            with sqlite3.connect(DB_FILE) as temp_conn:
+                completion_date = temp_conn.execute(
+                    "SELECT completion_date FROM todo_info WHERE item_id=?",
+                    (item[0],)
+                ).fetchone()
+                
+            if completion_date and completion_date[0]:
+                completion_date_str = completion_date[0]
+                grouped[completion_date_str].append(item)
+
+    # Display items grouped by completion date
     for completion_date in sorted(grouped.keys()):
         print()
         print(format_date_with_day(completion_date))
-        
-        # Build and print task tree for this completion date
-        date_tasks = grouped[completion_date]
-        root_tasks, children, task_dict = build_task_tree(date_tasks)
-        for i, root_task in enumerate(root_tasks):
-            is_last = (i == len(root_tasks) - 1)
-            print_task_tree(root_task, children, task_dict, is_last, "", is_root=True)
 
+        # Build and print item tree for this completion date
+        date_items = grouped[completion_date]
+        root_items, children, item_dict = build_item_tree(date_items)
+        for i, root_item in enumerate(root_items):
+            is_last = (i == len(root_items) - 1)
+            print_item_tree(root_item, children, item_dict, is_last, "", is_root=True)
 
 def show_tasks_by_status():
     with sqlite3.connect(DB_FILE) as conn:
-        # Get only incomplete root tasks to build hierarchies from (tasks with no parent and not done)
-        root_tasks = conn.execute("""
-            SELECT id, title, status, creation_date, due_date, completion_date, recur, pid
-            FROM tasks 
-            WHERE status != 'done' AND pid IS NULL AND parent_note_id IS NULL
-            ORDER BY 
-                CASE status 
+        # Get only incomplete root tasks to build hierarchies from
+        # A root task is defined as: a task which does not have any parent or which does not have a task as parent
+        # So we want tasks where pid IS NULL OR where the parent item has type 'note'
+        root_items = conn.execute("""
+            SELECT i.id, i.type, i.title, i.creation_date, i.pid
+            FROM items i
+            LEFT JOIN todo_info t ON i.id = t.item_id
+            WHERE i.type = 'todo' 
+              AND (i.pid IS NULL OR i.pid IN (SELECT id FROM items WHERE type = 'note'))
+              AND (t.status != 'done' OR t.status IS NULL)
+            ORDER BY
+                CASE t.status
                     WHEN 'todo' THEN 1
                     WHEN 'doing' THEN 2
                     WHEN 'waiting' THEN 3
                     ELSE 4
                 END,
-                due_date ASC, id ASC
+                t.due_date ASC, i.id ASC
         """).fetchall()
-        
-        # Get all notes for these root tasks and their hierarchies (including completed children)
-        if root_tasks:
-            # Collect all task IDs in the hierarchies under these incomplete root tasks
-            all_hierarchy_task_ids = set()
-            for root_task in root_tasks:
-                # Add current root task
-                all_hierarchy_task_ids.add(str(root_task[0]))  # root_task[0] is id
-                # Get all descendants of this root task (including completed ones)
-                with sqlite3.connect(DB_FILE) as conn2:
-                    descendants = conn2.execute("""
-                        WITH RECURSIVE task_tree AS (
-                            -- Base case: the root task itself
-                            SELECT id FROM tasks WHERE id = ?
-                            UNION ALL
-                            -- Recursive case: child tasks (including completed ones)
-                            SELECT t.id FROM tasks t
-                            JOIN task_tree tt ON t.pid = tt.id OR t.parent_note_id = tt.id
-                        )
-                        SELECT id FROM task_tree
-                    """, (root_task[0],)).fetchall()
-                    for desc in descendants:
-                        all_hierarchy_task_ids.add(str(desc[0]))
-            
-            if all_hierarchy_task_ids:
-                notes_query = """
-                    SELECT id, text, creation_date, task_id 
-                    FROM notes 
-                    WHERE task_id IN ({})
-                    ORDER BY creation_date ASC, id ASC
-                """.format(",".join("?" * len(list(all_hierarchy_task_ids))))
-                notes = conn.execute(notes_query, list(all_hierarchy_task_ids)).fetchall()
-            else:
-                notes = []
-        else:
-            notes = []
 
-    # Group root tasks by their status
+    # Group root items by their status
     grouped_by_status = defaultdict(list)
-    for t in root_tasks:
-        grouped_by_status[t[2]].append(t)  # t[2] is status
+    for item in root_items:
+        item_id = item[0]
+        # Get the status for this item
+        with sqlite3.connect(DB_FILE) as temp_conn:
+            status_result = temp_conn.execute(
+                "SELECT status FROM todo_info WHERE item_id=?",
+                (item_id,)
+            ).fetchone()
+        
+        status = status_result[0] if status_result else 'todo'
+        grouped_by_status[status].append(item)
 
-    # Display tasks grouped by status in the order: Todo, Doing, Waiting, Done
+    # Display items grouped by status in the order: Todo, Doing, Waiting, Done
     status_order = ['todo', 'doing', 'waiting', 'done']
     status_labels = {'todo': 'Todo', 'doing': 'Doing', 'waiting': 'Waiting', 'done': 'Done'}
-    
+
     for status in status_order:
         if status in grouped_by_status and grouped_by_status[status]:
             print(f"\n{status_labels[status]}")
-            
-            # For each root task of this status, get its complete hierarchy and print it
-            status_root_tasks = grouped_by_status[status]
-            for i, root_task in enumerate(status_root_tasks):
-                is_last = (i == len(status_root_tasks) - 1)
-                
-                # Get complete hierarchy under this root task (including completed children)
+
+            # For each root item of this status, get its complete hierarchy and print it
+            status_root_items = grouped_by_status[status]
+            for i, root_item in enumerate(status_root_items):
+                is_last = (i == len(status_root_items) - 1)
+
+                # Get complete hierarchy under this root item (including completed children)
                 with sqlite3.connect(DB_FILE) as temp_conn:
                     all_descendants = temp_conn.execute("""
-                        WITH RECURSIVE task_tree AS (
-                            -- Base case: the root task itself
-                            SELECT id, title, status, creation_date, due_date, completion_date, recur, pid, parent_note_id
-                            FROM tasks
+                        WITH RECURSIVE item_tree AS (
+                            -- Base case: the root item itself
+                            SELECT id, type, title, creation_date, pid
+                            FROM items
                             WHERE id = ?
-                            
+
                             UNION ALL
-                            -- Recursive case: all child tasks (including completed ones)
-                            SELECT t.id, t.title, t.status, t.creation_date, t.due_date, t.completion_date, t.recur, t.pid, t.parent_note_id
-                            FROM tasks t
-                            JOIN task_tree tt ON t.pid = tt.id OR t.parent_note_id = tt.id
+                            -- Recursive case: all child items (including completed ones)
+                            SELECT i.id, i.type, i.title, i.creation_date, i.pid
+                            FROM items i
+                            JOIN item_tree it ON i.pid = it.id
                         )
-                        SELECT id, title, status, creation_date, due_date, completion_date, recur, pid
-                        FROM task_tree
-                        ORDER BY 
-                            CASE status 
-                                WHEN 'todo' THEN 1
-                                WHEN 'doing' THEN 2
-                                WHEN 'waiting' THEN 3
-                                WHEN 'done' THEN 4
-                                ELSE 5
-                            END,
-                            due_date ASC, id ASC
-                    """, (root_task[0],)).fetchall()  # root_task[0] is id
+                        SELECT id, type, title, creation_date, pid
+                        FROM item_tree
+                        ORDER BY id ASC
+                    """, (root_item[0],)).fetchall()  # root_item[0] is id
 
                 # Build tree structure for this root with all its descendants
-                all_root_nodes, all_children, all_task_dict = build_task_tree(all_descendants)
-                
+                all_root_nodes, all_children, all_item_dict = build_item_tree(all_descendants)
+
                 # Print each root node in the hierarchy (should be just the main root we started with)
-                for j, task_node in enumerate(all_root_nodes):
-                    task_is_last = (j == len(all_root_nodes) - 1) and is_last
-                    print_task_tree(task_node, all_children, all_task_dict, task_is_last, "", is_root=True)
-
-
-
-
+                for j, item_node in enumerate(all_root_nodes):
+                    item_is_last = (j == len(all_root_nodes) - 1) and is_last
+                    print_item_tree(item_node, all_children, all_item_dict, item_is_last, "", is_root=True)
 
 # --- CLI Parser ---
 
@@ -1604,14 +1528,14 @@ def main():
             item_type = cmd  # "note" or "task"
             item_id = int(rest[0])
             options = rest[1:] if len(rest) > 1 else []  # Remaining args are options
-            
+
             if item_type == "note":
                 # Parse options for note editing/showing
                 new_text = None
                 link_ids = []
                 unlink_ids = []
                 task_under_note = None  # For adding task under note
-                
+
                 i = 0
                 while i < len(options):
                     if options[i] == "-text" and i + 1 < len(options):
@@ -1636,7 +1560,7 @@ def main():
                     else:
                         # Skip unknown option
                         i += 1
-                
+
                 # Perform operations
                 if new_text:
                     # Edit the note text
@@ -1649,7 +1573,7 @@ def main():
                     for unlink_id in unlink_ids:
                         unlink_notes(item_id, unlink_id)
                     for link_id in link_ids:
-                        link_notes(item_id, link_id)
+                        link_items(item_id, link_id)
                 else:
                     # Just show the note details if no options specified
                     show_note_details(item_id)
@@ -1659,7 +1583,7 @@ def main():
                 new_due = None
                 note_text = None
                 recur_pattern = None
-                
+
                 i = 0
                 while i < len(options):
                     if options[i] == "-text" and i + 1 < len(options):
@@ -1677,14 +1601,27 @@ def main():
                     else:
                         # Skip unknown option
                         i += 1
-                
+
                 # Perform operations
                 if new_title:
                     edit_task(item_id, new_title)
                 elif new_due:
                     with sqlite3.connect(DB_FILE) as conn:
+                        # Check if a record exists in todo_info, if not create one
+                        existing = conn.execute(
+                            "SELECT item_id FROM todo_info WHERE item_id=?",
+                            (item_id,)
+                        ).fetchone()
+                        
+                        if not existing:
+                            # Create a new record with default values
+                            conn.execute(
+                                "INSERT INTO todo_info (item_id, status, due_date) VALUES (?, 'todo', ?)",
+                                (item_id, datetime.now().date().strftime("%Y-%m-%d"))
+                            )
+                        
                         conn.execute(
-                            "UPDATE tasks SET due_date=? WHERE id=?",
+                            "UPDATE todo_info SET due_date=? WHERE item_id=?",
                             (new_due.strftime("%Y-%m-%d"), item_id)
                         )
                         print(f"Updated due date for task {item_id} to {new_due.strftime('%Y-%m-%d')}")
@@ -1698,69 +1635,69 @@ def main():
                 else:
                     # Just show the task details if no options specified
                     with sqlite3.connect(DB_FILE) as conn:
-                        task = conn.execute(
-                            "SELECT id,title,status,creation_date,due_date,completion_date,recur,pid FROM tasks WHERE id=?", 
+                        item = conn.execute(
+                            "SELECT id, type, title, creation_date, pid FROM items WHERE id=?",
                             (item_id,)
                         ).fetchone()
-                        
-                    if task:
-                        # Get all related tasks to build the tree (this task and its children)
+
+                    if item:
+                        # Get all related items to build the tree (this item and its children)
                         with sqlite3.connect(DB_FILE) as conn:
-                            all_related_tasks = conn.execute(
+                            all_related_items = conn.execute(
                                 """
-                                WITH RECURSIVE task_tree AS (
-                                    -- Base case: the selected task
-                                    SELECT id, title, status, creation_date, due_date, completion_date, recur, pid
-                                    FROM tasks
+                                WITH RECURSIVE item_tree AS (
+                                    -- Base case: the selected item
+                                    SELECT id, type, title, creation_date, pid
+                                    FROM items
                                     WHERE id = ?
-                                    
+
                                     UNION ALL
-                                    
-                                    -- Recursive case: child tasks
-                                    SELECT t.id, t.title, t.status, t.creation_date, t.due_date, t.completion_date, t.recur, t.pid
-                                    FROM tasks t
-                                    JOIN task_tree tt ON t.pid = tt.id
+
+                                    -- Recursive case: child items
+                                    SELECT i.id, i.type, i.title, i.creation_date, i.pid
+                                    FROM items i
+                                    JOIN item_tree it ON i.pid = it.id
                                 )
-                                SELECT * FROM task_tree
+                                SELECT * FROM item_tree
                                 ORDER BY id;
-                                """, 
+                                """,
                                 (item_id,)
                             ).fetchall()
-                        
-                        # Build the tree structure but ensure the requested task is treated as root for display
-                        task_dict = {task[0]: task for task in all_related_tasks}
-                        children = {task[0]: [] for task in all_related_tasks}
-                        
+
+                        # Build the tree structure but ensure the requested item is treated as root for display
+                        item_dict = {item_data[0]: item_data for item_data in all_related_items}
+                        children = {item_data[0]: [] for item_data in all_related_items}
+
                         # Build the hierarchy - connect children to parents that exist in our result set
-                        for task in all_related_tasks:
-                            task_id = task[0]
-                            parent_id = task[7]  # pid field
-                            
+                        for item_data in all_related_items:
+                            item_id_data = item_data[0]
+                            parent_id = item_data[4]  # pid field
+
                             # If parent exists in our subset, establish the relationship
                             if parent_id and parent_id in children:
-                                children[parent_id].append(task)
-                        
-                        # The requested task should be displayed as root regardless of its actual parent
-                        requested_task = task_dict[item_id]
-                        
-                        # Print the requested task with its subtree
-                        print_task_tree(requested_task, children, task_dict, is_last=True, prefix="", is_root=True)
+                                children[parent_id].append(item_data)
+
+                        # The requested item should be displayed as root regardless of its actual parent
+                        requested_item = item_dict[item_id]
+
+                        # Print the requested item with its subtree
+                        print_item_tree(requested_item, children, item_dict, is_last=True, prefix="", is_root=True)
                     else:
                         print(f"Error: Task with ID {item_id} not found")
         else:
-            # Handle "j note <text> [-link <id>[,<id>,...]]" or "j task [@<pid>] <text> [-due XX] [-recur XX]" (add new commands) 
+            # Handle "j note <text> [-link <id>[,<id>,...]]" or "j task [@<pid>] <text> [-due XX] [-recur XX]" (add new commands)
             sub_cmd = cmd  # "note" or "task"
             cmd_args = rest
-            
+
             if sub_cmd == "note":  # Handle "j note <text> [-link <id>[,<id>,...]]" (add new note)
                 # Check if the first argument is a parent note ID in the format @<number>
                 parent_note_id = None
                 start_idx = 0
-                
+
                 if cmd_args and cmd_args[0].startswith("@") and cmd_args[0][1:].isdigit():
                     parent_note_id = int(cmd_args[0][1:])  # Remove @ and convert to int
                     start_idx = 1  # Skip the first argument as it's the parent ID
-                
+
                 # Find the note text (everything before the first option flag)
                 note_text = []
                 link_ids = []
@@ -1779,41 +1716,41 @@ def main():
                     else:
                         note_text.append(cmd_args[i])
                         i += 1
-                
+
                 if not note_text:
                     print("Error: Please provide note text")
                     return
-                
+
                 text = " ".join(note_text)
                 if text:
                     # Check if parent_note_id exists if provided
                     if parent_note_id is not None:
                         with sqlite3.connect(DB_FILE) as conn:
-                            cursor = conn.execute("SELECT id FROM notes WHERE id = ?", (parent_note_id,))
+                            cursor = conn.execute("SELECT id FROM items WHERE id = ?", (parent_note_id,))
                             if not cursor.fetchone():
-                                print(f"Error: Parent note with ID {parent_note_id} does not exist")
+                                print(f"Error: Parent item with ID {parent_note_id} does not exist")
                                 return
-                    
+
                     # Add the note with parent if specified
                     note_ids = add_note([], text, parent_note_id)
-                    
+
                     # Then create links if specified
                     if link_ids and note_ids:
                         # Use the note ID from the add_note function
                         note_id = note_ids[0]  # Since we're adding one note, get the first ID
                         for link_id in link_ids:
-                            link_notes(note_id, link_id)
+                            link_items(note_id, link_id)
                 else:
                     print("Error: Please provide note text")
             elif sub_cmd == "task":
-                # Check if the first argument is a parent task ID in the format @<number>
+                # Check if the first argument is a parent item ID in the format @<number>
                 parent_id = None
                 start_idx = 0
-                
+
                 if cmd_args and cmd_args[0].startswith("@") and cmd_args[0][1:].isdigit():
                     parent_id = int(cmd_args[0][1:])  # Remove @ and convert to int
                     start_idx = 1  # Skip the first argument as it's the parent ID
-                
+
                 # Find the task text (everything before the first option flag)
                 task_text = []
                 due_date = None
@@ -1841,61 +1778,47 @@ def main():
                     else:
                         task_text.append(cmd_args[i])
                         i += 1
-                
+
                 if not task_text:
                     print("Error: Please provide task text")
                     return
-                
+
                 text = " ".join(task_text)
                 if text:
                     # Check if parent_id exists if provided
                     if parent_id is not None:
                         with sqlite3.connect(DB_FILE) as conn:
-                            cursor = conn.execute("SELECT id FROM tasks WHERE id = ?", (parent_id,))
+                            cursor = conn.execute("SELECT id FROM items WHERE id = ?", (parent_id,))
                             if not cursor.fetchone():
-                                print(f"Error: Parent task with ID {parent_id} does not exist")
+                                print(f"Error: Parent item with ID {parent_id} does not exist")
                                 return
-                    
+
                     # For child tasks, recurrence should be ignored
                     if parent_id is not None and recur_pattern is not None:
                         print(f"Warning: Recurrence pattern '{recur_pattern}' is ignored for child tasks")
                         recur_pattern = None  # Don't allow recurrence for child tasks
-                    
+
                     # Add the task with due date if specified
                     if due_date:
                         # Create a temporary task with due date
                         today = datetime.now().date().strftime("%Y-%m-%d")
-                        with sqlite3.connect(DB_FILE) as conn:
-                            task_id = conn.execute(
-                                "INSERT INTO tasks (title,status,creation_date,due_date,recur,pid) VALUES (?,?,?,?,?,?)",
-                                (text, "todo", today, due_date.strftime("%Y-%m-%d"), recur_pattern, parent_id)
-                            ).lastrowid
-                            print(f"Added task with id {task_id}")
+                        item_id = add_item_with_details(text, "todo", due_date.strftime("%Y-%m-%d"), parent_id)
+                        print(f"Added task with id {item_id}")
                     else:
                         # Add task without due date (default to today)
-                        if recur_pattern:  # Need to call add_task with proper due date handling
+                        if recur_pattern:  # Need to call add_item with proper due date handling
                             # Use today as default due date when recurrence is specified but due date isn't
                             today = datetime.now().date()
                             formatted_today = today.strftime("%Y-%m-%d")
-                            with sqlite3.connect(DB_FILE) as conn:
-                                task_id = conn.execute(
-                                    "INSERT INTO tasks (title,status,creation_date,due_date,recur,pid) VALUES (?,?,?,?,?,?)",
-                                    (text, "todo", formatted_today, formatted_today, recur_pattern, parent_id)
-                                ).lastrowid
-                            print(f"Added task with id {task_id}")
+                            item_id = add_item_with_details(text, "todo", formatted_today, parent_id)
+                            print(f"Added task with id {item_id}")
                         else:
                             # Call original add_task function for simple tasks but with parent ID
-                            today = datetime.now().date().strftime("%Y-%m-%d")
-                            with sqlite3.connect(DB_FILE) as conn:
-                                cursor = conn.execute(
-                                    "INSERT INTO tasks (title,status,creation_date,due_date,pid) VALUES (?,?,?,?,?)",
-                                    (text, "todo", today, today, parent_id)
-                                )
-                                task_id = cursor.lastrowid
-                            print(f"Added task with id {task_id}")
+                            item_id = add_item(text, "todo", parent_id)
+                            print(f"Added task with id {item_id}")
                 else:
                     print("Error: Please provide task text")
-    
+
     elif cmd in ["page"]:
         # The old 'j page|p' command has been removed
         print("Command 'j page|p' has been removed. Use 'j help' to see available commands.")
@@ -1914,7 +1837,7 @@ def main():
         # New consolidated command: j <start|restart|waiting> task <id>[,<id>,...]
         ids_str = rest[1]
         ids = [int(id_str) for id_str in ids_str.split(",") if id_str.isdigit()]
-        
+
         if cmd == "start":
             update_task_status(ids, "doing")
         elif cmd == "restart":
@@ -1925,13 +1848,13 @@ def main():
         # New consolidated command: j done task <id>[,<id>,...] [note text]
         ids_str = rest[1]
         ids = [int(id_str) for id_str in ids_str.split(",") if id_str.isdigit()]
-        
+
         # Everything after the task IDs is considered note text (optional)
         note_text = " ".join(rest[2:]) if len(rest) > 2 else ""
         if not ids:
             print("Error: Please provide valid task IDs")
             return
-        
+
         update_task_status(ids, "done", note_text)
 
 
@@ -1939,7 +1862,7 @@ def main():
         # The 'j edit' command is now deprecated. Inform the user about the new syntax.
         item_type = rest[0].lower()
         item_id = int(rest[1]) if rest[1].isdigit() else None
-        
+
         if item_type == "note":
             print("The 'j edit note' command is deprecated. Use 'j note <id> [options]' instead.")
         elif item_type == "task":
@@ -1952,7 +1875,7 @@ def main():
             item_type = rest[0].lower()
             ids_str = rest[1]
             ids = [int(id_str) for id_str in ids_str.split(",") if id_str.isdigit()]
-            
+
             if item_type == "note":
                 delete_note(ids)
             elif item_type == "task":
@@ -1989,10 +1912,15 @@ def main():
     elif cmd == "search":
         if rest:
             search_text = " ".join(rest)
-            grouped, tasks, notes = search_tasks_and_notes(search_text)
+            grouped, items = search_tasks_and_notes(search_text)
             display_search_results(grouped)
         else:
             print("Error: Please provide search text")
+    elif cmd == "clear":
+        if rest and rest[0] == "all":
+            clear_all()
+        else:
+            print("Error: Use 'j clear all' to clear all data from the database")
     elif cmd == "help":
         print("""j - Command Line Journal and Task Manager
 
@@ -2024,6 +1952,8 @@ COMMANDS:
         Mark task(s) as done with optional note
     j search <text>
         Search for tasks and notes containing text (supports wildcards: * = any chars, ? = single char)
+    j clear all
+        Remove all data from the database (requires confirmation)
     j help
         Show this help message
 """)
