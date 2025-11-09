@@ -1,10 +1,13 @@
 import argparse
 import sqlite3
+import os
+import sys
 from datetime import datetime, timedelta, date
 from collections import defaultdict
 from colorama import Fore, Back, Style, init
 
-DB_FILE = "jrnl.db"
+# Placeholder for database file path - will be set by command line arguments
+DB_FILE = None
 init(autoreset=True)  # colorama setup
 
 # --- Date Helpers ---
@@ -1505,10 +1508,34 @@ def show_tasks_by_status():
 # --- CLI Parser ---
 
 def main():
+    # Require database file to be specified in command line arguments
+    if "-d" not in sys.argv or sys.argv.index("-d") + 1 >= len(sys.argv):
+        print("Error: Database file must be specified with -d <database_file>")
+        print("Example: python jrnl_app.py -d jrnl.db help")
+        sys.exit(1)
+    
+    # Find and extract the database file from the arguments
+    global DB_FILE
+    d_index = sys.argv.index("-d")
+    if d_index + 1 < len(sys.argv):
+        db_filename = sys.argv[d_index + 1]
+        # Remove -d and the filename from sys.argv so they're not processed as commands
+        sys.argv = sys.argv[:d_index] + sys.argv[d_index+2:]
+        
+        # If the filename doesn't contain a path separator, put it in the home directory
+        if os.sep not in db_filename and "/" not in db_filename and "\\" not in db_filename:
+            home_dir = os.path.expanduser("~")
+            DB_FILE = os.path.join(home_dir, db_filename)
+        else:
+            DB_FILE = db_filename
+    else:
+        print("Error: Database file must be specified after -d flag")
+        sys.exit(1)
+    
+    # Initialize database with the specified DB_FILE
     init_db()
-
-    # Parse command line arguments manually to avoid argparse interpreting flags as its own arguments
-    import sys
+    
+    # Now parse the actual command from the modified sys.argv
     if len(sys.argv) == 1:
         cmd = None
         rest = []
@@ -1925,7 +1952,11 @@ def main():
         print("""j - Command Line Journal and Task Manager
 
 USAGE:
-    j [command] [arguments...]
+    j -d <database_file> [command] [arguments...]
+    
+OPTIONS:
+    -d <database_file>
+        Specify the database file to use (required). The file will be created in your home directory if no path is specified.
 
 COMMANDS:
     j
