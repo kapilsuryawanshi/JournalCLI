@@ -489,7 +489,7 @@ def edit_note(note_id, new_text):
         print(f"Updated note {note_id} text to: {new_text}")
         return True
 
-def delete_task(task_ids):
+def delete_task(task_ids, auto_confirm=False):
     """Delete tasks from the database along with their child items recursively"""
     if not task_ids:
         print("No tasks to delete")
@@ -513,18 +513,19 @@ def delete_task(task_ids):
             current_items = [child[0] for child in children]
             all_items_to_delete.update(current_items)
 
-    # Ask for confirmation before deletion
+    # Ask for confirmation before deletion (skip if auto_confirm is True)
     total_items = len(all_items_to_delete)
     if total_items == 0:
         print("No tasks to delete")
         return
 
-    print(f"Warning: You are about to delete {total_items} task(s) (including children). This action cannot be undone.")
-    confirmation = input("Type 'yes' to confirm deletion: ").strip().lower()
+    if not auto_confirm:
+        print(f"Warning: You are about to delete {total_items} task(s) (including children). This action cannot be undone.")
+        confirmation = input("Type 'yes' to confirm deletion: ").strip().lower()
 
-    if confirmation != 'yes':
-        print("Deletion cancelled.")
-        return
+        if confirmation != 'yes':
+            print("Deletion cancelled.")
+            return
 
     # Now delete all items and their associated todo_info records
     deleted_count = 0
@@ -1897,19 +1898,51 @@ def main():
         else:
             print("The 'j edit' command is deprecated. Use 'j note <id> [options]' or 'j task <id> [options]' instead.")
     elif cmd == "rm":
-        if rest and len(rest) >= 2:
-            # Consolidated syntax: j rm <note|task> <id>[,<id>,...]
-            item_type = rest[0].lower()
-            ids_str = rest[1]
-            ids = [int(id_str) for id_str in ids_str.split(",") if id_str.isdigit()]
-
-            if item_type == "note":
-                delete_note(ids)
-            elif item_type == "task":
-                delete_task(ids)
-            else:
-                print("Error: Invalid item type. Use 'note' or 'task'")
+        if rest and len(rest) >= 1:
+            # New simplified syntax: j rm <id>[,<id>,...] (no need to specify note/task)
+            # The old syntax with t/n prefixes is no longer supported
+            ids_str = rest[0]
+            id_parts = ids_str.split(",")
+            
+            # Check if any part has the old syntax prefixes (t or n)
+            has_old_syntax = any(part.strip().startswith(('t', 'n')) and len(part) > 1 for part in id_parts)
+            
+            if has_old_syntax:
+                print("Old syntax 'j rm t<id>[,n<id>...] has been removed. Use 'j help' to see available commands.")
                 return
+            
+            # Parse the IDs (should be pure numbers now)
+            ids = [int(id_str) for id_str in id_parts if id_str.isdigit()]
+
+            if not ids:
+                print("Error: Please provide valid item IDs")
+                return
+
+            # Group IDs by type to make deletion more efficient
+            note_ids = []
+            task_ids = []
+            
+            with sqlite3.connect(DB_FILE) as conn:
+                for item_id in ids:
+                    item = conn.execute("SELECT type FROM items WHERE id=?", (item_id,)).fetchone()
+                    if item:
+                        item_type = item[0]
+                        if item_type == 'note':
+                            note_ids.append(item_id)
+                        elif item_type == 'todo':
+                            task_ids.append(item_id)
+                        else:
+                            print(f"Error: Unknown item type for ID {item_id}")
+                    else:
+                        print(f"Error: Item with ID {item_id} does not exist")
+            
+            # Delete all notes at once
+            if note_ids:
+                delete_note(note_ids, auto_confirm=True)
+            
+            # Delete all tasks at once
+            if task_ids:
+                delete_task(task_ids, auto_confirm=True)
         else:
             print("Old syntax 'j rm t<id>[,n<id>...] has been removed. Use 'j help' to see available commands.")
     elif cmd in ["task"]:
@@ -1973,8 +2006,8 @@ COMMANDS:
         Edit task with optional parameters or show task details if no options
     j task <id>
         Show specific task details (use without options to view)
-    j rm <note|task> <id>[,<id>,...]
-        Delete notes or tasks by ID
+    j rm <id>[,<id>,...]
+        Delete notes or tasks by ID (no need to specify note or task)
     j ls <page|note|task> [due|status|done]
         List items with optional grouping
     j <start|restart|waiting|done> task <id>[,<id>,...]

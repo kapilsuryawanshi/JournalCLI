@@ -297,7 +297,7 @@ def test_delete_task_still_works_with_rm():
     
     # Simulate command line arguments for "jrnl rm task <id>,<id>"
     original_argv = sys.argv.copy()
-    sys.argv = ["jrnl_app.py", "-d", DB_FILE, "rm", "task", f"{task1_id},{task2_id}"]
+    sys.argv = ["jrnl_app.py", "-d", DB_FILE, "rm", f"{task1_id},{task2_id}"]
     
     try:
         f = StringIO()

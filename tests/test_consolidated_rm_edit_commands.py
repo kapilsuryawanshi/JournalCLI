@@ -80,7 +80,7 @@ def test_consolidated_rm_task_by_id():
     
     # Simulate command line arguments for "jrnl rm task <id>"
     original_argv = sys.argv.copy()
-    sys.argv = ["jrnl_app.py", "rm", "task", str(task_id)]
+    sys.argv = ["jrnl_app.py", "rm", str(task_id)]
     
     try:
         f = StringIO()
@@ -145,7 +145,7 @@ def test_consolidated_rm_multiple_tasks():
     # Simulate command line arguments for "jrnl rm task <id>,<id>,<id>"
     ids_str = ",".join(map(str, task_ids))
     original_argv = sys.argv.copy()
-    sys.argv = ["jrnl_app.py", "rm", "task", ids_str]
+    sys.argv = ["jrnl_app.py", "rm", ids_str]
     
     try:
         f = StringIO()
