@@ -1807,17 +1807,15 @@ def main():
         elif cmd == "waiting":
             update_task_status(ids, "waiting")
     elif cmd == "done" and len(rest) >= 2 and rest[0] == "task":
-        # New consolidated command: j done task <id>[,<id>,...] [note text]
+        # New consolidated command: j done task <id>[,<id>,...]
         ids_str = rest[1]
         ids = [int(id_str) for id_str in ids_str.split(",") if id_str.isdigit()]
 
-        # Everything after the task IDs is considered note text (optional)
-        note_text = " ".join(rest[2:]) if len(rest) > 2 else ""
         if not ids:
             print("Error: Please provide valid task IDs")
             return
 
-        update_task_status(ids, "done", note_text)
+        update_task_status(ids, "done")
 
 
     elif cmd == "edit" and len(rest) >= 2:
@@ -1949,8 +1947,8 @@ COMMANDS:
         List items with optional grouping
     j <start|restart|waiting|done> task <id>[,<id>,...]
         Task status operations
-    j done task <id>[,<id>,...] [note text]
-        Mark task(s) as done with optional note
+    j done task <id>[,<id>,...]
+        Mark task(s) as done
     j search <text>
         Search for tasks and notes containing text (supports wildcards: * = any chars, ? = single char)
     j clear all
