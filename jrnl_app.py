@@ -1900,18 +1900,10 @@ def main():
     elif cmd == "rm":
         if rest and len(rest) >= 1:
             # New simplified syntax: j rm <id>[,<id>,...] (no need to specify note/task)
-            # The old syntax with t/n prefixes is no longer supported
             ids_str = rest[0]
             id_parts = ids_str.split(",")
             
-            # Check if any part has the old syntax prefixes (t or n)
-            has_old_syntax = any(part.strip().startswith(('t', 'n')) and len(part) > 1 for part in id_parts)
-            
-            if has_old_syntax:
-                print("Old syntax 'j rm t<id>[,n<id>...] has been removed. Use 'j help' to see available commands.")
-                return
-            
-            # Parse the IDs (should be pure numbers now)
+            # Parse the IDs (should be pure numbers)
             ids = [int(id_str) for id_str in id_parts if id_str.isdigit()]
 
             if not ids:
