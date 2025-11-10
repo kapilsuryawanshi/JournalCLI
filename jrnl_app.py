@@ -1910,9 +1910,10 @@ def main():
                 print("Error: Please provide valid item IDs")
                 return
 
-            # Group IDs by type to make deletion more efficient
+            # Group IDs by type to make deletion more efficient and count items
             note_ids = []
             task_ids = []
+            invalid_ids = []
             
             with sqlite3.connect(DB_FILE) as conn:
                 for item_id in ids:
@@ -1925,14 +1926,31 @@ def main():
                             task_ids.append(item_id)
                         else:
                             print(f"Error: Unknown item type for ID {item_id}")
+                            invalid_ids.append(item_id)
                     else:
                         print(f"Error: Item with ID {item_id} does not exist")
+                        invalid_ids.append(item_id)
+
+            # Determine total count of items to be deleted
+            total_items = len(note_ids) + len(task_ids)
             
-            # Delete all notes at once
+            if total_items == 0:
+                print("No valid items to delete.")
+                return
+            
+            # Ask for confirmation before deletion
+            print(f"Warning: You are about to delete {total_items} item(s). This action cannot be undone.")
+            confirmation = input("Type 'yes' to confirm deletion: ").strip().lower()
+            
+            if confirmation != 'yes':
+                print("Deletion cancelled.")
+                return
+
+            # Delete all notes at once (auto_confirm=True since we already got overall confirmation)
             if note_ids:
                 delete_note(note_ids, auto_confirm=True)
-            
-            # Delete all tasks at once
+
+            # Delete all tasks at once (auto_confirm=True since we already got overall confirmation)
             if task_ids:
                 delete_task(task_ids, auto_confirm=True)
         else:
