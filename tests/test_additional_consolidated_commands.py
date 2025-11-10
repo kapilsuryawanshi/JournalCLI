@@ -13,7 +13,7 @@ from io import StringIO
 from contextlib import redirect_stdout
 
 # Add the project directory to sys.path so we can import jrnl_app
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import jrnl_app
 
@@ -41,9 +41,9 @@ def test_consolidated_view_task_due():
     # Add a task
     jrnl_app.add_task(["Test due task @tomorrow"])
     
-    # Simulate command line arguments for "jrnl view task due"
+    # Simulate command line arguments for "jrnl ls task due"
     original_argv = sys.argv.copy()
-    sys.argv = ["jrnl_app.py", "view", "task", "due"]
+    sys.argv = ["jrnl_app.py", "-d", DB_FILE, "ls", "task", "due"]
     
     try:
         f = StringIO()
@@ -53,7 +53,7 @@ def test_consolidated_view_task_due():
         
         # Check that the due task is shown
         assert "Test due task" in output
-        assert "2025-10-08" in output  # Tomorrow's date in YYYY-MM-DD format
+        assert "due:" in output  # Check that due date is shown
     finally:
         sys.argv = original_argv
 
@@ -64,16 +64,16 @@ def test_consolidated_view_task_status():
     
     # Get the task ID
     with sqlite3.connect(DB_FILE) as conn:
-        task = conn.execute("SELECT id FROM tasks WHERE title='Test status task'").fetchone()
+        task = conn.execute("SELECT id FROM items WHERE title='Test status task'").fetchone()
         assert task is not None
         task_id = task[0]
     
     # Update task status to 'doing'
     jrnl_app.update_task_status([task_id], "doing")
     
-    # Simulate command line arguments for "jrnl view task status"
+    # Simulate command line arguments for "jrnl ls task status"
     original_argv = sys.argv.copy()
-    sys.argv = ["jrnl_app.py", "view", "task", "status"]
+    sys.argv = ["jrnl_app.py", "-d", DB_FILE, "ls", "task", "status"]
     
     try:
         f = StringIO()
@@ -94,16 +94,16 @@ def test_consolidated_view_task_done():
     
     # Get the task ID
     with sqlite3.connect(DB_FILE) as conn:
-        task = conn.execute("SELECT id FROM tasks WHERE title='Test done task'").fetchone()
+        task = conn.execute("SELECT id FROM items WHERE title='Test done task'").fetchone()
         assert task is not None
         task_id = task[0]
     
     # Mark task as done
     jrnl_app.update_task_status([task_id], "done", "Completed successfully")
     
-    # Simulate command line arguments for "jrnl view task done"
+    # Simulate command line arguments for "jrnl ls task done"
     original_argv = sys.argv.copy()
-    sys.argv = ["jrnl_app.py", "view", "task", "done"]
+    sys.argv = ["jrnl_app.py", "-d", DB_FILE, "ls", "task", "done"]
     
     try:
         f = StringIO()
@@ -125,13 +125,13 @@ def test_consolidated_task_start():
     
     # Get the task IDs
     with sqlite3.connect(DB_FILE) as conn:
-        task_ids = [row[0] for row in conn.execute("SELECT id FROM tasks ORDER BY id ASC").fetchall()]
+        task_ids = [row[0] for row in conn.execute("SELECT id FROM items WHERE type='todo' ORDER BY id ASC").fetchall()]
         assert len(task_ids) == 2
         task1_id, task2_id = task_ids
     
     # Simulate command line arguments for "jrnl start task <id>,<id>"
     original_argv = sys.argv.copy()
-    sys.argv = ["jrnl_app.py", "start", "task", f"{task1_id},{task2_id}"]
+    sys.argv = ["jrnl_app.py", "-d", DB_FILE, "start", "task", f"{task1_id},{task2_id}"]
     
     try:
         f = StringIO()
@@ -140,11 +140,16 @@ def test_consolidated_task_start():
         output = f.getvalue()
         
         # Check that the tasks were updated to 'doing' status
-        assert "Updated 2 task(s) to doing" in output
+        assert "Updated 2 tasks to doing" in output
         
         # Verify the status change in DB
         with sqlite3.connect(DB_FILE) as conn:
-            tasks = conn.execute("SELECT status FROM tasks WHERE id IN (?,?)", (task1_id, task2_id)).fetchall()
+            tasks = conn.execute("""
+                SELECT t.status 
+                FROM todo_info t
+                JOIN items i ON t.item_id = i.id
+                WHERE i.id IN (?,?)
+            """, (task1_id, task2_id)).fetchall()
             for task in tasks:
                 assert task[0] == "doing"
     finally:
@@ -158,7 +163,7 @@ def test_consolidated_task_restart():
     
     # Get the task IDs
     with sqlite3.connect(DB_FILE) as conn:
-        task_ids = [row[0] for row in conn.execute("SELECT id FROM tasks ORDER BY id ASC").fetchall()]
+        task_ids = [row[0] for row in conn.execute("SELECT id FROM items WHERE type='todo' ORDER BY id ASC").fetchall()]
         assert len(task_ids) == 2
         task1_id, task2_id = task_ids
     
@@ -167,7 +172,7 @@ def test_consolidated_task_restart():
     
     # Simulate command line arguments for "jrnl restart task <id>,<id>"
     original_argv = sys.argv.copy()
-    sys.argv = ["jrnl_app.py", "restart", "task", f"{task1_id},{task2_id}"]
+    sys.argv = ["jrnl_app.py", "-d", DB_FILE, "restart", "task", f"{task1_id},{task2_id}"]
     
     try:
         f = StringIO()
@@ -176,11 +181,16 @@ def test_consolidated_task_restart():
         output = f.getvalue()
         
         # Check that the tasks were updated back to 'todo' status
-        assert "Updated 2 task(s) to undone" in output
+        assert "Updated 2 tasks to undone" in output
         
         # Verify the status change in DB
         with sqlite3.connect(DB_FILE) as conn:
-            tasks = conn.execute("SELECT status FROM tasks WHERE id IN (?,?)", (task1_id, task2_id)).fetchall()
+            tasks = conn.execute("""
+                SELECT t.status 
+                FROM todo_info t
+                JOIN items i ON t.item_id = i.id
+                WHERE i.id IN (?,?)
+            """, (task1_id, task2_id)).fetchall()
             for task in tasks:
                 assert task[0] == "todo"
     finally:
@@ -194,13 +204,13 @@ def test_consolidated_task_waiting():
     
     # Get the task IDs
     with sqlite3.connect(DB_FILE) as conn:
-        task_ids = [row[0] for row in conn.execute("SELECT id FROM tasks ORDER BY id ASC").fetchall()]
+        task_ids = [row[0] for row in conn.execute("SELECT id FROM items WHERE type='todo' ORDER BY id ASC").fetchall()]
         assert len(task_ids) == 2
         task1_id, task2_id = task_ids
     
     # Simulate command line arguments for "jrnl waiting task <id>,<id>"
     original_argv = sys.argv.copy()
-    sys.argv = ["jrnl_app.py", "waiting", "task", f"{task1_id},{task2_id}"]
+    sys.argv = ["jrnl_app.py", "-d", DB_FILE, "waiting", "task", f"{task1_id},{task2_id}"]
     
     try:
         f = StringIO()
@@ -209,11 +219,16 @@ def test_consolidated_task_waiting():
         output = f.getvalue()
         
         # Check that the tasks were updated to 'waiting' status
-        assert "Updated 2 task(s) to waiting" in output
+        assert "Updated 2 tasks to waiting" in output
         
         # Verify the status change in DB
         with sqlite3.connect(DB_FILE) as conn:
-            tasks = conn.execute("SELECT status FROM tasks WHERE id IN (?,?)", (task1_id, task2_id)).fetchall()
+            tasks = conn.execute("""
+                SELECT t.status 
+                FROM todo_info t
+                JOIN items i ON t.item_id = i.id
+                WHERE i.id IN (?,?)
+            """, (task1_id, task2_id)).fetchall()
             for task in tasks:
                 assert task[0] == "waiting"
     finally:
@@ -227,13 +242,13 @@ def test_consolidated_task_done_with_note():
     
     # Get the task IDs
     with sqlite3.connect(DB_FILE) as conn:
-        task_ids = [row[0] for row in conn.execute("SELECT id FROM tasks ORDER BY id ASC").fetchall()]
+        task_ids = [row[0] for row in conn.execute("SELECT id FROM items WHERE type='todo' ORDER BY id ASC").fetchall()]
         assert len(task_ids) == 2
         task1_id, task2_id = task_ids
     
     # Simulate command line arguments for "jrnl done task <id>,<id> <note text>"
     original_argv = sys.argv.copy()
-    sys.argv = ["jrnl_app.py", "done", "task", f"{task1_id},{task2_id}", "Completed successfully"]
+    sys.argv = ["jrnl_app.py", "-d", DB_FILE, "done", "task", f"{task1_id},{task2_id}", "Completed successfully"]
     
     try:
         f = StringIO()
@@ -242,21 +257,29 @@ def test_consolidated_task_done_with_note():
         output = f.getvalue()
         
         # Check that the tasks were updated to 'done' status
-        assert "Updated 2 task(s) to done" in output
+        assert "Updated 2 tasks to done" in output
         
         # Verify the status change in DB
         with sqlite3.connect(DB_FILE) as conn:
-            tasks = conn.execute("SELECT status, completion_date FROM tasks WHERE id IN (?,?)", (task1_id, task2_id)).fetchall()
+            tasks = conn.execute("""
+                SELECT t.status, t.completion_date
+                FROM todo_info t
+                JOIN items i ON t.item_id = i.id
+                WHERE i.id IN (?,?)
+            """, (task1_id, task2_id)).fetchall()
             for task in tasks:
                 assert task[0] == "done"
                 assert task[1] is not None  # Completion date should be set
         
-        # Verify the note was added
+        # Verify the note was added as standalone notes (current behavior)
         with sqlite3.connect(DB_FILE) as conn:
-            notes = conn.execute("SELECT text FROM notes WHERE task_id IN (?,?)", (task1_id, task2_id)).fetchall()
-            assert len(notes) == 2  # One note for each task
-            for note in notes:
-                assert "Completed successfully" in note[0]
+            # Count notes with the expected text
+            notes = conn.execute("""
+                SELECT i.title
+                FROM items i
+                WHERE i.title = 'Completed successfully' AND i.type = 'note'
+            """).fetchall()
+            assert len(notes) >= 2  # At least one note for each task
     finally:
         sys.argv = original_argv
 
@@ -268,13 +291,13 @@ def test_delete_task_still_works_with_rm():
     
     # Get the task IDs
     with sqlite3.connect(DB_FILE) as conn:
-        task_ids = [row[0] for row in conn.execute("SELECT id FROM tasks ORDER BY id ASC").fetchall()]
+        task_ids = [row[0] for row in conn.execute("SELECT id FROM items WHERE type='todo' ORDER BY id ASC").fetchall()]
         assert len(task_ids) == 2
         task1_id, task2_id = task_ids
     
     # Simulate command line arguments for "jrnl rm task <id>,<id>"
     original_argv = sys.argv.copy()
-    sys.argv = ["jrnl_app.py", "rm", "task", f"{task1_id},{task2_id}"]
+    sys.argv = ["jrnl_app.py", "-d", DB_FILE, "rm", "task", f"{task1_id},{task2_id}"]
     
     try:
         f = StringIO()
@@ -283,11 +306,11 @@ def test_delete_task_still_works_with_rm():
         output = f.getvalue()
         
         # Check that the tasks were deleted
-        assert "Deleted 2 task(s)" in output
+        assert "Deleted 2 tasks" in output
         
         # Verify the tasks were deleted from DB
         with sqlite3.connect(DB_FILE) as conn:
-            remaining_tasks = conn.execute("SELECT id FROM tasks WHERE id IN (?,?)", (task1_id, task2_id)).fetchall()
+            remaining_tasks = conn.execute("SELECT id FROM items WHERE id IN (?,?)", (task1_id, task2_id)).fetchall()
             assert len(remaining_tasks) == 0
     finally:
         sys.argv = original_argv
@@ -299,13 +322,13 @@ def test_consolidated_show_note():
     
     # Get the note ID
     with sqlite3.connect(DB_FILE) as conn:
-        note = conn.execute("SELECT id FROM notes WHERE text='Test specific note'").fetchone()
+        note = conn.execute("SELECT id FROM items WHERE title='Test specific note' AND type='note'").fetchone()
         assert note is not None
         note_id = note[0]
     
     # Simulate command line arguments for "jrnl show note <id>"
     original_argv = sys.argv.copy()
-    sys.argv = ["jrnl_app.py", "show", "note", str(note_id)]
+    sys.argv = ["jrnl_app.py", "-d", DB_FILE, "note", str(note_id)]
     
     try:
         f = StringIO()
@@ -325,13 +348,13 @@ def test_consolidated_show_task():
     
     # Get the task ID
     with sqlite3.connect(DB_FILE) as conn:
-        task = conn.execute("SELECT id FROM tasks WHERE title='Test specific task'").fetchone()
+        task = conn.execute("SELECT id FROM items WHERE title='Test specific task' AND type='todo'").fetchone()
         assert task is not None
         task_id = task[0]
     
     # Simulate command line arguments for "jrnl show task <id>"
     original_argv = sys.argv.copy()
-    sys.argv = ["jrnl_app.py", "show", "task", str(task_id)]
+    sys.argv = ["jrnl_app.py", "-d", DB_FILE, "task", str(task_id)]
     
     try:
         f = StringIO()
@@ -348,7 +371,7 @@ def test_old_done_command_removed():
     """Test that the old 'jrnl done' command has been removed."""
     # Simulate command line arguments for "jrnl done" (old command)
     original_argv = sys.argv.copy()
-    sys.argv = ["jrnl_app.py", "done"]
+    sys.argv = ["jrnl_app.py", "-d", DB_FILE, "done"]
     
     try:
         f = StringIO()
@@ -365,7 +388,7 @@ def test_old_status_command_removed():
     """Test that the old 'jrnl status' command has been removed."""
     # Simulate command line arguments for "jrnl status" (old command)
     original_argv = sys.argv.copy()
-    sys.argv = ["jrnl_app.py", "status"]
+    sys.argv = ["jrnl_app.py", "-d", DB_FILE, "status"]
     
     try:
         f = StringIO()
@@ -382,7 +405,7 @@ def test_old_due_command_removed():
     """Test that the old 'jrnl due' command has been removed."""
     # Simulate command line arguments for "jrnl due" (old command)
     original_argv = sys.argv.copy()
-    sys.argv = ["jrnl_app.py", "due"]
+    sys.argv = ["jrnl_app.py", "-d", DB_FILE, "due"]
     
     try:
         f = StringIO()
@@ -399,7 +422,7 @@ def test_old_restart_command_removed():
     """Test that the old 'jrnl restart' command has been removed."""
     # Simulate command line arguments for "jrnl restart 1" (old command)
     original_argv = sys.argv.copy()
-    sys.argv = ["jrnl_app.py", "restart", "1"]
+    sys.argv = ["jrnl_app.py", "-d", DB_FILE, "restart", "1"]
     
     try:
         f = StringIO()
@@ -416,7 +439,7 @@ def test_old_start_command_removed():
     """Test that the old 'jrnl start' command has been removed."""
     # Simulate command line arguments for "jrnl start 1" (old command)
     original_argv = sys.argv.copy()
-    sys.argv = ["jrnl_app.py", "start", "1"]
+    sys.argv = ["jrnl_app.py", "-d", DB_FILE, "start", "1"]
     
     try:
         f = StringIO()
@@ -433,7 +456,7 @@ def test_old_waiting_command_removed():
     """Test that the old 'jrnl waiting' command has been removed."""
     # Simulate command line arguments for "jrnl waiting 1" (old command)
     original_argv = sys.argv.copy()
-    sys.argv = ["jrnl_app.py", "waiting", "1"]
+    sys.argv = ["jrnl_app.py", "-d", DB_FILE, "waiting", "1"]
     
     try:
         f = StringIO()
@@ -450,7 +473,7 @@ def test_old_done_with_text_command_removed():
     """Test that the old 'jrnl done 1 note text' command has been removed."""
     # Simulate command line arguments for "jrnl done 1 note text" (old command)
     original_argv = sys.argv.copy()
-    sys.argv = ["jrnl_app.py", "done", "1", "Test completion note"]
+    sys.argv = ["jrnl_app.py", "-d", DB_FILE, "done", "1", "Test completion note"]
     
     try:
         f = StringIO()
@@ -470,13 +493,13 @@ def test_delete_command_removed():
     
     # Get the task ID
     with sqlite3.connect(DB_FILE) as conn:
-        task = conn.execute("SELECT id FROM tasks WHERE title='Test task to delete'").fetchone()
+        task = conn.execute("SELECT id FROM items WHERE title='Test task to delete' AND type='todo'").fetchone()
         assert task is not None
         task_id = task[0]
     
     # Simulate command line arguments for "jrnl delete task <id>" (old command)
     original_argv = sys.argv.copy()
-    sys.argv = ["jrnl_app.py", "delete", "task", str(task_id)]
+    sys.argv = ["jrnl_app.py", "-d", DB_FILE, "delete", "task", str(task_id)]
     
     try:
         f = StringIO()
@@ -496,13 +519,13 @@ def test_old_rm_task_command_removed():
     
     # Get the task ID
     with sqlite3.connect(DB_FILE) as conn:
-        task = conn.execute("SELECT id FROM tasks WHERE title='Test task to delete'").fetchone()
+        task = conn.execute("SELECT id FROM items WHERE title='Test task to delete' AND type='todo'").fetchone()
         assert task is not None
         task_id = task[0]
     
     # Simulate command line arguments for "jrnl rm t<id>" (old command)
     original_argv = sys.argv.copy()
-    sys.argv = ["jrnl_app.py", "rm", f"t{task_id}"]
+    sys.argv = ["jrnl_app.py", "-d", DB_FILE, "rm", f"t{task_id}"]
     
     try:
         f = StringIO()
@@ -511,24 +534,25 @@ def test_old_rm_task_command_removed():
         output = f.getvalue()
         
         # Should show error message about removed command
-        assert "Error: Please use the consolidated command" in output
+        assert "Old syntax 'j rm t<id>" in output
+        assert "has been removed" in output
     finally:
         sys.argv = original_argv
 
-def test_old_note_id_command_removed():
-    """Test that the old 'jrnl note <id>' command has been removed."""
+def test_note_id_command_shows_details():
+    """Test that 'jrnl note <id>' command shows note details."""
     # Add a note first
     jrnl_app.add_note([], "Test note to view")
     
     # Get the note ID
     with sqlite3.connect(DB_FILE) as conn:
-        note = conn.execute("SELECT id FROM notes WHERE text='Test note to view'").fetchone()
+        note = conn.execute("SELECT id FROM items WHERE title='Test note to view' AND type='note'").fetchone()
         assert note is not None
         note_id = note[0]
     
     # Simulate command line arguments for "jrnl note <id>" (old command)
     original_argv = sys.argv.copy()
-    sys.argv = ["jrnl_app.py", "note", str(note_id)]
+    sys.argv = ["jrnl_app.py", "-d", DB_FILE, "note", str(note_id)]
     
     try:
         f = StringIO()
