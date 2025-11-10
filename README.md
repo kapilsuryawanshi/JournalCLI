@@ -71,6 +71,10 @@ The application uses a simplified database schema with the following tables:
 - `j note <id> -text "new text"` - Edit a note
 - `j note <id> -link <id1>,<id2>` - Link a note to other items
 
+### View Items
+
+- `j show <id>` - Show specific note or task details by ID
+
 ### Task Operations
 
 - `j start task <id>,<id2>,...` - Mark task(s) as 'doing'
