@@ -1552,11 +1552,10 @@ def main():
             options = rest[1:] if len(rest) > 1 else []  # Remaining args are options
 
             if item_type == "note":
-                # Parse options for note editing (no more showing)
+                # Parse options for note editing (no more showing, removing -task option)
                 new_text = None
                 link_ids = []
                 unlink_ids = []
-                task_under_note = None  # For adding task under note
 
                 i = 0
                 while i < len(options):
@@ -1575,10 +1574,6 @@ def main():
                         ids = ids_str.split(",")
                         unlink_ids = [int(id_str) for id_str in ids if id_str.isdigit()]
                         i += 2
-                    elif options[i] == "-task" and i + 1 < len(options):
-                        # Add a task under this note
-                        task_under_note = options[i + 1]
-                        i += 2
                     else:
                         # Skip unknown option
                         i += 1
@@ -1587,9 +1582,6 @@ def main():
                 if new_text:
                     # Edit the note text
                     edit_note(item_id, new_text)
-                elif task_under_note:
-                    # Add a task under this note
-                    add_task_under_note(item_id, task_under_note)
                 elif link_ids or unlink_ids:
                     # Handle linking/unlinking
                     for unlink_id in unlink_ids:
@@ -1647,9 +1639,6 @@ def main():
                             (new_due.strftime("%Y-%m-%d"), item_id)
                         )
                         print(f"Updated due date for task {item_id} to {new_due.strftime('%Y-%m-%d')}")
-                elif note_text:
-                    # Add note to the task
-                    add_note([item_id], note_text)
                 elif recur_pattern:
                     # Validate and set recur pattern
                     if set_task_recur([item_id], recur_pattern):
@@ -1946,11 +1935,11 @@ COMMANDS:
         Show tasks grouped by due date (default view) (Overdue / Due Today / Due Tomorrow / This Week / This Month / Future)
     j note [@<pid>] <text>
         Add a new root note. If <pid> is given then add a note under parent note with ID <pid>
-    j note <id> [-text <text>] [-link <id>[,<id>,...]] [-unlink <id>[,<id>,...]] [-task <text>]
-        Edit note with optional text, linking, unlinking, adding subtask
+    j note <id> [-text <text>] [-link <id>[,<id>,...]] [-unlink <id>[,<id>,...]]
+        Edit note with optional text, linking, unlinking
     j task [@<pid>] <text> [-due <YYYY-MM-DD|today|tomorrow|eow|eom|eoy>] [-recur <Nd|Nw|Nm|Ny>]
         Add a new root task if no <pid> is given else add a new task under parent task with ID <pid>, with optional due date and recurrence
-    j task <id> [-text <text>] [-due <date>] [-note <text>] [-recur <pattern>]
+    j task <id> [-text <text>] [-due <date>] [-recur <pattern>]
         Edit task with optional parameters
     j show <id>
         Show specific note or task details by ID
