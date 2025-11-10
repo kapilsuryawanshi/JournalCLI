@@ -1795,9 +1795,9 @@ def main():
         else:
             # The old note command (j note <text>) and edit command (j note <id> edit) have been removed
             print("Commands 'j note <text>' and 'j note <id> edit' have been removed. Use 'j help' to see available commands.")
-    elif cmd in ["start", "restart", "waiting"] and len(rest) >= 2 and rest[0] == "task":
-        # New consolidated command: j <start|restart|waiting> task <id>[,<id>,...]
-        ids_str = rest[1]
+    elif cmd in ["start", "restart", "waiting", "done"] and len(rest) >= 1:
+        # New consolidated command: j <start|restart|waiting|done> <id>[,<id>,...]
+        ids_str = rest[0]
         ids = [int(id_str) for id_str in ids_str.split(",") if id_str.isdigit()]
 
         if cmd == "start":
@@ -1806,16 +1806,11 @@ def main():
             update_task_status(ids, "todo")
         elif cmd == "waiting":
             update_task_status(ids, "waiting")
-    elif cmd == "done" and len(rest) >= 2 and rest[0] == "task":
-        # New consolidated command: j done task <id>[,<id>,...]
-        ids_str = rest[1]
-        ids = [int(id_str) for id_str in ids_str.split(",") if id_str.isdigit()]
-
-        if not ids:
-            print("Error: Please provide valid task IDs")
-            return
-
-        update_task_status(ids, "done")
+        elif cmd == "done":
+            if not ids:
+                print("Error: Please provide valid task IDs")
+                return
+            update_task_status(ids, "done")
 
 
     elif cmd == "edit" and len(rest) >= 2:
@@ -1945,9 +1940,9 @@ COMMANDS:
         Delete notes or tasks by ID (no need to specify note or task)
     j ls <page|note|task> [due|status|done]
         List items with optional grouping
-    j <start|restart|waiting|done> task <id>[,<id>,...]
+    j <start|restart|waiting|done> <id>[,<id>,...]
         Task status operations
-    j done task <id>[,<id>,...]
+    j done <id>[,<id>,...]
         Mark task(s) as done
     j search <text>
         Search for tasks and notes containing text (supports wildcards: * = any chars, ? = single char)
