@@ -1543,6 +1543,123 @@ def main():
         # New consolidated command: j show <id>
         item_id = int(rest[0])
         show_item_details(item_id)
+    elif cmd == "edit" and rest and len(rest) >= 1 and rest[0].isdigit():
+        # New consolidated command: j edit <id> [-text <text>] [-due <date>] [-recur <pattern>] [-link <id>[,<id>,...]] [-unlink <id>[,<id>,...]] [-parent <id>|none]
+        item_id = int(rest[0])
+        options = rest[1:] if len(rest) > 1 else []  # Remaining args are options
+        
+        # Parse options for editing
+        new_text = None
+        new_due = None
+        recur_pattern = None
+        link_ids = []
+        unlink_ids = []
+        new_parent_id = None  # For changing parent
+        
+        i = 0
+        while i < len(options):
+            if options[i] == "-text" and i + 1 < len(options):
+                new_text = options[i + 1]
+                i += 2
+            elif options[i] == "-due" and i + 1 < len(options):
+                new_due = parse_due(options[i + 1])
+                i += 2
+            elif options[i] == "-recur" and i + 1 < len(options):
+                recur_pattern = options[i + 1]
+                i += 2
+            elif options[i] == "-link" and i + 1 < len(options):
+                # Parse comma-separated list of IDs to link
+                ids_str = options[i + 1]
+                ids = ids_str.split(",")
+                link_ids = [int(id_str) for id_str in ids if id_str.isdigit()]
+                i += 2
+            elif options[i] == "-unlink" and i + 1 < len(options):
+                # Parse comma-separated list of IDs to unlink
+                ids_str = options[i + 1]
+                ids = ids_str.split(",")
+                unlink_ids = [int(id_str) for id_str in ids if id_str.isdigit()]
+                i += 2
+            elif options[i] == "-parent" and i + 1 < len(options):
+                # Parse parent ID or 'none'
+                parent_value = options[i + 1]
+                if parent_value.lower() == 'none':
+                    new_parent_id = None
+                elif parent_value.isdigit():
+                    new_parent_id = int(parent_value)
+                i += 2
+            else:
+                # Skip unknown option
+                i += 1
+        
+        # Get the item type to determine what operations are valid
+        with sqlite3.connect(DB_FILE) as conn:
+            item = conn.execute("SELECT type FROM items WHERE id=?", (item_id,)).fetchone()
+        
+        if not item:
+            print(f"Error: Item with ID {item_id} does not exist")
+            return
+        
+        item_type = item[0]  # 'note' or 'todo'
+        
+        # Perform operations
+        if new_text:
+            if item_type == 'note':
+                edit_note(item_id, new_text)
+            else:  # task
+                edit_task(item_id, new_text)
+        
+        if new_due and item_type == 'todo':
+            with sqlite3.connect(DB_FILE) as conn:
+                # Check if a record exists in todo_info, if not create one
+                existing = conn.execute(
+                    "SELECT item_id FROM todo_info WHERE item_id=?",
+                    (item_id,)
+                ).fetchone()
+
+                if not existing:
+                    # Create a new record with default values
+                    conn.execute(
+                        "INSERT INTO todo_info (item_id, status, due_date) VALUES (?, 'todo', ?)",
+                        (item_id, datetime.now().date().strftime("%Y-%m-%d"))
+                    )
+
+                conn.execute(
+                    "UPDATE todo_info SET due_date=? WHERE item_id=?",
+                    (new_due.strftime("%Y-%m-%d"), item_id)
+                )
+                print(f"Updated due date for {item_type} {item_id} to {new_due.strftime('%Y-%m-%d')}")
+        
+        if recur_pattern and item_type == 'todo':
+            # Validate and set recur pattern
+            if set_task_recur([item_id], recur_pattern):
+                print(f"Set recur pattern '{recur_pattern}' for task {item_id}")
+        
+        if new_parent_id is not None:
+            # Update the parent ID (pid) for the item
+            with sqlite3.connect(DB_FILE) as conn:
+                # Check if the new parent exists (if not None)
+                if new_parent_id is not None:
+                    parent_exists = conn.execute(
+                        "SELECT id FROM items WHERE id=?", (new_parent_id,)
+                    ).fetchone()
+                    if not parent_exists:
+                        print(f"Error: Parent item with ID {new_parent_id} does not exist")
+                        return
+                
+                # Update the parent ID
+                conn.execute(
+                    "UPDATE items SET pid=? WHERE id=?", (new_parent_id, item_id)
+                )
+                parent_display = new_parent_id if new_parent_id is not None else "none"
+                print(f"Updated parent for item {item_id} to {parent_display}")
+        
+        if link_ids:
+            for link_id in link_ids:
+                link_items(item_id, link_id)
+        
+        if unlink_ids:
+            for unlink_id in unlink_ids:
+                unlink_notes(item_id, unlink_id)
     elif cmd in ["task", "note"]:  # Handle new consolidated commands
         # Check if the first argument is a numeric ID (for editing/showing)
         if rest and len(rest) >= 1 and rest[0].isdigit():
@@ -1553,99 +1670,12 @@ def main():
 
             if item_type == "note":
                 # Parse options for note editing (no more showing, removing -task option)
-                new_text = None
-                link_ids = []
-                unlink_ids = []
-
-                i = 0
-                while i < len(options):
-                    if options[i] == "-text" and i + 1 < len(options):
-                        new_text = options[i + 1]
-                        i += 2
-                    elif options[i] == "-link" and i + 1 < len(options):
-                        # Parse comma-separated list of IDs to link
-                        ids_str = options[i + 1]
-                        ids = ids_str.split(",")
-                        link_ids = [int(id_str) for id_str in ids if id_str.isdigit()]
-                        i += 2
-                    elif options[i] == "-unlink" and i + 1 < len(options):
-                        # Parse comma-separated list of IDs to unlink
-                        ids_str = options[i + 1]
-                        ids = ids_str.split(",")
-                        unlink_ids = [int(id_str) for id_str in ids if id_str.isdigit()]
-                        i += 2
-                    else:
-                        # Skip unknown option
-                        i += 1
-
-                # Perform operations
-                if new_text:
-                    # Edit the note text
-                    edit_note(item_id, new_text)
-                elif link_ids or unlink_ids:
-                    # Handle linking/unlinking
-                    for unlink_id in unlink_ids:
-                        unlink_notes(item_id, unlink_id)
-                    for link_id in link_ids:
-                        link_items(item_id, link_id)
-                else:
-                    # Show is now handled by the 'show' command instead of defaulting to show_note_details
-                    print(f"Command 'j note {item_id}' without options is deprecated. Use 'j show {item_id}' to view details.")
+                # Note editing functionality has been moved to 'j edit <id>' command
+                print(f"The 'j note {item_id}' command for editing is deprecated. Use 'j edit {item_id}' instead.")
             elif item_type == "task":
-                # Parse options for task editing/showing
-                new_title = None
-                new_due = None
-                note_text = None
-                recur_pattern = None
-
-                i = 0
-                while i < len(options):
-                    if options[i] == "-text" and i + 1 < len(options):
-                        new_title = options[i + 1]
-                        i += 2
-                    elif options[i] == "-due" and i + 1 < len(options):
-                        new_due = parse_due(options[i + 1])
-                        i += 2
-                    elif options[i] == "-note" and i + 1 < len(options):
-                        note_text = options[i + 1]
-                        i += 2
-                    elif options[i] == "-recur" and i + 1 < len(options):
-                        recur_pattern = options[i + 1]
-                        i += 2
-                    else:
-                        # Skip unknown option
-                        i += 1
-
-                # Perform operations
-                if new_title:
-                    edit_task(item_id, new_title)
-                elif new_due:
-                    with sqlite3.connect(DB_FILE) as conn:
-                        # Check if a record exists in todo_info, if not create one
-                        existing = conn.execute(
-                            "SELECT item_id FROM todo_info WHERE item_id=?",
-                            (item_id,)
-                        ).fetchone()
-                        
-                        if not existing:
-                            # Create a new record with default values
-                            conn.execute(
-                                "INSERT INTO todo_info (item_id, status, due_date) VALUES (?, 'todo', ?)",
-                                (item_id, datetime.now().date().strftime("%Y-%m-%d"))
-                            )
-                        
-                        conn.execute(
-                            "UPDATE todo_info SET due_date=? WHERE item_id=?",
-                            (new_due.strftime("%Y-%m-%d"), item_id)
-                        )
-                        print(f"Updated due date for task {item_id} to {new_due.strftime('%Y-%m-%d')}")
-                elif recur_pattern:
-                    # Validate and set recur pattern
-                    if set_task_recur([item_id], recur_pattern):
-                        print(f"Set recur pattern '{recur_pattern}' for task {item_id}")
-                else:
-                    # Show is now handled by the 'show' command instead of defaulting to the old task display
-                    print(f"Command 'j task {item_id}' without options is deprecated. Use 'j show {item_id}' to view details.")
+                # Parse options for task editing (no more showing, removing -note option)
+                # Task editing functionality has been moved to 'j edit <id>' command
+                print(f"The 'j task {item_id}' command for editing is deprecated. Use 'j edit {item_id}' instead.")
         else:
             # Handle "j note <text> [-link <id>[,<id>,...]]" or "j task [@<pid>] <text> [-due XX] [-recur XX]" (add new commands)
             sub_cmd = cmd  # "note" or "task"
@@ -1813,17 +1843,7 @@ def main():
             update_task_status(ids, "done")
 
 
-    elif cmd == "edit" and len(rest) >= 2:
-        # The 'j edit' command is now deprecated. Inform the user about the new syntax.
-        item_type = rest[0].lower()
-        item_id = int(rest[1]) if rest[1].isdigit() else None
 
-        if item_type == "note":
-            print("The 'j edit note' command is deprecated. Use 'j note <id> [options]' instead.")
-        elif item_type == "task":
-            print("The 'j edit task' command is deprecated. Use 'j task <id> [options]' instead.")
-        else:
-            print("The 'j edit' command is deprecated. Use 'j note <id> [options]' or 'j task <id> [options]' instead.")
     elif cmd == "rm":
         if rest and len(rest) >= 1:
             # New simplified syntax: j rm <id>[,<id>,...] (no need to specify note/task)
@@ -1928,12 +1948,10 @@ COMMANDS:
         Show tasks grouped by due date (default view) (Overdue / Due Today / Due Tomorrow / This Week / This Month / Future)
     j note [@<pid>] <text>
         Add a new root note. If <pid> is given then add a note under parent note with ID <pid>
-    j note <id> [-text <text>] [-link <id>[,<id>,...]] [-unlink <id>[,<id>,...]]
-        Edit note with optional text, linking, unlinking
     j task [@<pid>] <text> [-due <YYYY-MM-DD|today|tomorrow|eow|eom|eoy>] [-recur <Nd|Nw|Nm|Ny>]
         Add a new root task if no <pid> is given else add a new task under parent task with ID <pid>, with optional due date and recurrence
-    j task <id> [-text <text>] [-due <date>] [-recur <pattern>]
-        Edit task with optional parameters
+    j edit <id> [-text <text>] [-due <date>] [-recur <pattern>] [-link <id>[,<id>,...]] [-unlink <id>[,<id>,...]] [-parent <id>|none]
+        Edit any item (note or task) with all available options
     j show <id>
         Show specific note or task details by ID
     j rm <id>[,<id>,...]
