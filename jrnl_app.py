@@ -1252,112 +1252,45 @@ def show_item_details(item_id):
 
         item_id, item_type, title, creation_date, pid = item
 
-        # Print the item text in consistent format based on its type
-        if item_type == 'note':
-            print(Fore.YELLOW + f"- {title} (id:{item_id}) ({creation_date})" + Style.RESET_ALL)
-        else:  # task
-            # Get todo info for tasks
-            todo_info = conn.execute(
-                "SELECT status, due_date, completion_date, recur FROM todo_info WHERE item_id=?",
-                (item_id,)
-            ).fetchone()
+        # Get all related items to build the entire tree (this item and all its descendants)
+        all_related_items = conn.execute("""
+            WITH RECURSIVE item_tree AS (
+                -- Base case: the selected item
+                SELECT id, type, title, creation_date, pid
+                FROM items
+                WHERE id = ?
 
-            if todo_info:
-                status, due_date, completion_date, recur = todo_info
-            else:
-                # Default values
-                status, due_date, completion_date, recur = 'todo', creation_date, None, None
+                UNION ALL
 
-            checkbox = "[x]" if status == "done" else "[ ]"
+                -- Recursive case: child items
+                SELECT i.id, i.type, i.title, i.creation_date, i.pid
+                FROM items i
+                JOIN item_tree it ON i.pid = it.id
+            )
+            SELECT * FROM item_tree
+            ORDER BY id;
+            """, (item_id,)).fetchall()
 
-            # Color based on status
-            if status == "doing":
-                task_text = Back.YELLOW + Fore.BLACK + f"{checkbox} {title} (id:{item_id})" + Style.RESET_ALL
-            elif status == "waiting":
-                task_text = Back.LIGHTBLACK_EX + Fore.WHITE + f"{checkbox} {title} (id:{item_id})" + Style.RESET_ALL
-            elif status == "done":
-                task_text = Fore.GREEN + f"{checkbox} {title} (id:{item_id})" + Style.RESET_ALL
-            else:  # todo
-                task_text = f"{checkbox} {title}  (id:{item_id})"
+        # Build the tree structure but ensure the requested item is treated as root for display
+        item_dict = {item_data[0]: item_data for item_data in all_related_items}
+        children = {item_data[0]: [] for item_data in all_related_items}
 
-            # Show recur pattern if it exists
-            if recur:
-                task_text += f" (recur: {recur})"
+        # Build the hierarchy - connect children to parents that exist in our result set
+        for item_data in all_related_items:
+            item_id_data = item_data[0]
+            parent_id = item_data[4]  # pid field
 
-            # Show due date
-            due = datetime.strptime(due_date, "%Y-%m-%d").date()
-            today = datetime.now().date()
-            if status != "done":
-                if due < today:
-                    task_text += Fore.RED + f" (due: {format_date_with_day(due_date)})"
-                elif due == today:
-                    task_text += Fore.CYAN + f" (due: {format_date_with_day(due_date)})"
-                else:
-                    task_text += f" (due: {format_date_with_day(due_date)})"
+            # If parent exists in our subset, establish the relationship
+            if parent_id and parent_id in children:
+                children[parent_id].append(item_data)
 
-            print(task_text)
+        # The requested item should be displayed as root regardless of its actual parent
+        requested_item = item_dict[item_id]
 
-        # Get child items (items that have this note as parent)
-        child_items = conn.execute("""
-            SELECT id, type, title, creation_date, pid
-            FROM items
-            WHERE pid = ?
-            ORDER BY creation_date ASC, id ASC
-        """, (item_id,)).fetchall()
+        # Print the requested item with its entire subtree
+        print_item_tree(requested_item, children, item_dict, is_last=True, prefix="", is_root=True)
 
-        # Print child items
-        has_children = len(child_items) > 0
-        if has_children:
-            for child_item in child_items:
-                child_item_id, child_item_type, child_title, child_creation_date, child_pid = child_item
-                if child_item_type == 'note':
-                    print(Fore.YELLOW + f"\t> {child_title} (id:{child_item_id}) ({child_creation_date})" + Style.RESET_ALL)
-                    # Recursively display children of this child note (if any)
-                    show_child_item_details(conn, child_item_id, "\t\t")
-                elif child_item_type == 'todo':
-                    # For child todos
-                    with sqlite3.connect(DB_FILE) as temp_conn:
-                        todo_info = temp_conn.execute(
-                            "SELECT status, due_date, completion_date, recur FROM todo_info WHERE item_id=?",
-                            (child_item_id,)
-                        ).fetchone()
-
-                    if todo_info:
-                        status, due_date, completion_date, recur = todo_info
-                    else:
-                        # Default values
-                        status, due_date, completion_date, recur = 'todo', child_creation_date, None, None
-
-                    checkbox = "[x]" if status == "done" else "[ ]"
-
-                    # Color based on status
-                    if status == "doing":
-                        task_text = Back.YELLOW + Fore.BLACK + f"{checkbox} {child_title} (id:{child_item_id})" + Style.RESET_ALL
-                    elif status == "waiting":
-                        task_text = Back.LIGHTBLACK_EX + Fore.WHITE + f"{child_title} (id:{child_item_id})" + Style.RESET_ALL
-                    elif status == "done":
-                        task_text = Fore.GREEN + f"{child_title} (id:{child_item_id})" + Style.RESET_ALL
-                    else:  # todo
-                        task_text = f"{child_title}  (id:{child_item_id})"
-
-                    # Show recur pattern if it exists
-                    if recur:
-                        task_text += f" (recur: {recur})"
-
-                    # Show due date
-                    due = datetime.strptime(due_date, "%Y-%m-%d").date()
-                    today = datetime.now().date()
-                    if status != "done":
-                        if due < today:
-                            task_text += Fore.RED + f" (due: {format_date_with_day(due_date)})"
-                        elif due == today:
-                            task_text += Fore.CYAN + f" (due: {format_date_with_day(due_date)})"
-                        else:
-                            task_text += f" (due: {format_date_with_day(due_date)})"
-
-                    print(Fore.YELLOW + f"\t{task_text}" + Style.RESET_ALL)
-
-        # Get linked items
+        # Get linked items (separate from the tree structure)
         linked_items = conn.execute("""
             SELECT il.item1_id, il.item2_id, i1.title as item1_title, i2.title as item2_title,
                    i1.type as item1_type, i2.type as item2_type,
@@ -1387,8 +1320,7 @@ def show_item_details(item_id):
                 # Format the linked item consistently
                 print(Fore.CYAN + f"  - {other_item_title} (id:{other_item_id}, type:{other_item_type}) ({other_creation_date})" + Style.RESET_ALL)
         else:
-            if not has_children:
-                print(Fore.CYAN + f"\nNo linked items found." + Style.RESET_ALL)
+            print(Fore.CYAN + f"\nNo linked items found." + Style.RESET_ALL)
 
 
 def add_item_with_parent(title, item_type, parent_id):
