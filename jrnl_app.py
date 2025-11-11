@@ -576,8 +576,9 @@ def update_task_status(task_ids, status, note_text=None):
         if status == 'done' and task_details:
             title, parent_id, recur_pattern, original_due_date = task_details
             if recur_pattern:
-                # Calculate the next due date based on the recurrence pattern
-                next_due_date = calculate_next_due_date(original_due_date, recur_pattern)
+                # Calculate the next due date based on the completion date (today) and recurrence pattern
+                completion_date = datetime.now().date().strftime("%Y-%m-%d")
+                next_due_date = calculate_next_due_date(completion_date, recur_pattern)
                 
                 # Get the original task's details to create a new one
                 with sqlite3.connect(DB_FILE) as conn:
