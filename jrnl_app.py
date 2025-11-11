@@ -5,6 +5,9 @@ import sys
 from datetime import datetime, timedelta, date
 from collections import defaultdict
 from colorama import Fore, Back, Style, init
+import glob
+import shutil
+import time
 
 # Placeholder for database file path - will be set by command line arguments
 DB_FILE = None
@@ -2136,21 +2139,6 @@ def main():
                             print(f"Added task with id {item_id}")
                 else:
                     print("Error: Please provide task text")
-
-    elif cmd in ["page"]:
-        # The old 'j page|p' command has been removed
-        print("Command 'j page|p' has been removed. Use 'j help' to see available commands.")
-    elif cmd in ["task"] and rest:  # Handle task commands
-        # The old task command (j task <text>) has been removed
-        print("Command 'j task <text>' has been removed. Use 'j help' to see available commands.")
-    elif cmd in ["note"] and rest:  # Handle note commands with arguments
-        # Check if first argument is a single digit/number (for note lookup)
-        if len(rest) == 1 and rest[0].isdigit():
-            # The old note command (j note <id>) has been removed
-            print("Command 'j note <id>' has been removed. Use 'j help' to see available commands.")
-        else:
-            # The old note command (j note <text>) and edit command (j note <id> edit) have been removed
-            print("Commands 'j note <text>' and 'j note <id> edit' have been removed. Use 'j help' to see available commands.")
     elif cmd in ["start", "restart", "waiting", "done"] and len(rest) >= 1:
         # New consolidated command: j <start|restart|waiting|done> <id>[,<id>,...]
         ids_str = rest[0]
@@ -2167,9 +2155,6 @@ def main():
                 print("Error: Please provide valid task IDs")
                 return
             update_task_status(ids, "done")
-
-
-
     elif cmd == "rm":
         if rest and len(rest) >= 1:
             # New simplified syntax: j rm <id>[,<id>,...] (no need to specify note/task)
@@ -2221,8 +2206,6 @@ def main():
 
             # Use the unified delete_item function with all valid IDs
             delete_item(ids)
-        else:
-            print("Old syntax 'j rm t<id>[,n<id>...] has been removed. Use 'j help' to see available commands.")
     elif cmd in ["task"]:
         show_task()
     elif cmd in ["note"]:
@@ -2291,10 +2274,6 @@ def main():
         if not rest:
             print("Error: Please specify a backup operation: create, ls, or restore <file>")
         elif rest[0] == "create":
-            import shutil
-            import time
-            from datetime import datetime
-            
             # Get the directory where the database file is located
             db_dir = os.path.dirname(DB_FILE)
             db_name = os.path.basename(DB_FILE)
@@ -2312,10 +2291,7 @@ def main():
             except Exception as e:
                 print(f"Error creating backup: {e}")
                 
-        elif rest[0] == "ls":
-            import glob
-            from datetime import datetime
-            
+        elif rest[0] == "list":
             # Get the directory where the database file is located
             db_dir = os.path.dirname(DB_FILE)
             db_name = os.path.basename(DB_FILE)
@@ -2339,7 +2315,6 @@ def main():
                     print(f"  {backup_name} (modified: {mtime_str})")
                     
         elif rest[0] == "restore" and len(rest) >= 2:
-            import shutil
             backup_file = rest[1]
             
             # Get the directory where the database file is located
@@ -2367,7 +2342,7 @@ def main():
             except Exception as e:
                 print(f"Error restoring database: {e}")
         else:
-            print("Error: Invalid backup operation. Use 'create', 'ls', or 'restore <file>'")
+            print("Error: Invalid backup operation. Use 'create', 'list', or 'restore <file>'")
     elif cmd == "clear":
         if rest and rest[0] == "all":
             clear_all()
@@ -2396,13 +2371,13 @@ COMMANDS:
         Show specific note or task details by ID
     j rm <id>[,<id>,...]
         Delete notes or tasks by ID (no need to specify note or task)
-    j ls <page|note|task> [due|status|done]
+    j list <page|note|task> [due|status|done]
         List items with optional grouping
     j <start|restart|waiting|done> <id>[,<id>,...]
         Task status operations
     j import [@<pid>] <file>
         Import item structure from file with indented hierarchy
-    j backup <create|ls|restore <file>>
+    j backup <create|list|restore <file>>
         Backup operations: create backup, list backups, or restore from backup
     j search <text>
         Search for tasks and notes containing text (supports wildcards: * = any chars, ? = single char)
