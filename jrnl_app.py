@@ -376,7 +376,7 @@ def format_item(item, prefix=""):
         if recur:
             text += f" (recur: {recur})"
 
-        # Show due date
+        # Show due date for non-completed tasks
         if status != "done":
             due = datetime.strptime(due_date, "%Y-%m-%d").date()
             today = datetime.now().date()
@@ -386,6 +386,10 @@ def format_item(item, prefix=""):
                 text += Fore.CYAN + f" (due: {format_date_with_day(due_date)})"
             else:
                 text += f" (due: {format_date_with_day(due_date)})"
+        else:
+            # For completed tasks, show completion date if available
+            if completion_date:
+                text += f" completed: {format_date_with_day(completion_date)}"
 
         return text + Style.RESET_ALL
     else:  # note
