@@ -967,16 +967,28 @@ def show_due():
 
         # Get root tasks (tasks with no parent or with note as parent) that are not completed, grouped by due date
         # Use the same root task definition as in show_task() - tasks with no parent or note as parent
-        root_items = conn.execute("""
-            SELECT i.id, i.type, i.title, i.creation_date, i.pid
-            FROM items i
-            JOIN todo_info t ON i.id = t.item_id
-            WHERE i.type = 'todo'
-              AND (i.pid IS NULL OR i.pid IN (SELECT id FROM items WHERE type = 'note'))
-              AND i.id NOT IN ({})
-            ORDER BY t.due_date ASC, i.id ASC
-        """.format(",".join("?" * len(list(excluded_ids_set))) if excluded_ids_set else "SELECT NULL WHERE 1=0", list(excluded_ids_set) if excluded_ids_set else [])
-        ).fetchall()
+        # Prepare parameters for the query
+        if excluded_ids_set:
+            root_items = conn.execute("""
+                SELECT i.id, i.type, i.title, i.creation_date, i.pid
+                FROM items i
+                JOIN todo_info t ON i.id = t.item_id
+                WHERE i.type = 'todo'
+                  AND (i.pid IS NULL OR i.pid IN (SELECT id FROM items WHERE type = 'note'))
+                  AND i.id NOT IN ({})
+                ORDER BY t.due_date ASC, i.id ASC
+            """.format(",".join("?" * len(list(excluded_ids_set)))), list(excluded_ids_set)
+            ).fetchall()
+        else:
+            # If no excluded IDs, just run query without NOT IN clause
+            root_items = conn.execute("""
+                SELECT i.id, i.type, i.title, i.creation_date, i.pid
+                FROM items i
+                JOIN todo_info t ON i.id = t.item_id
+                WHERE i.type = 'todo'
+                  AND (i.pid IS NULL OR i.pid IN (SELECT id FROM items WHERE type = 'note'))
+                ORDER BY t.due_date ASC, i.id ASC
+            """).fetchall()
 
     # Group root items by their due date buckets
     buckets = {
