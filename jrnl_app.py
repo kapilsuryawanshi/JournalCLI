@@ -551,10 +551,37 @@ def add_note(task_ids, text, parent_note_id=None):
 
     return added_note_ids
 
+def has_incomplete_children(task_id):
+    """Check if a task has any incomplete immediate child tasks.
+    
+    Args:
+        task_id (int): The ID of the parent task to check
+        
+    Returns:
+        bool: True if there are incomplete child tasks, False otherwise
+    """
+    with sqlite3.connect(DB_FILE) as conn:
+        # Find all immediate child tasks (not notes) that are not completed
+        incomplete_children = conn.execute("""
+            SELECT i.id
+            FROM items i
+            JOIN todo_info t ON i.id = t.item_id
+            WHERE i.pid = ? AND i.type = 'todo' AND t.status != 'done'
+        """, (task_id,)).fetchall()
+        
+        return len(incomplete_children) > 0
+
+
 def update_task_status(task_ids, status, note_text=None):
     """Update the status of task items"""
     updated_count = 0
     for tid in task_ids:
+        # Check if we're trying to complete a parent task with incomplete children
+        if status == 'done':
+            if has_incomplete_children(tid):
+                print(f"Error: Cannot complete task {tid} because it has incomplete child tasks")
+                continue  # Skip updating this task
+        
         # Get the current task details before updating the status
         with sqlite3.connect(DB_FILE) as conn:
             task_details = conn.execute("""
