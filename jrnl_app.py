@@ -666,6 +666,14 @@ def update_todo_status(item_id, status):
 
 def set_task_recur(task_ids, recur_pattern):
     """Set the recur pattern for tasks"""
+    # Handle special case to remove recurrence
+    if recur_pattern.lower() == 'none':
+        # Remove recurrence by setting it to NULL
+        with sqlite3.connect(DB_FILE) as conn:
+            for tid in task_ids:
+                conn.execute("UPDATE todo_info SET recur=NULL WHERE item_id=?", (tid,))
+        return True
+    
     # Validate the recur pattern
     if not recur_pattern or len(recur_pattern) < 2:
         print("Error: Invalid recur pattern. Use...")
