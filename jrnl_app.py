@@ -1338,10 +1338,13 @@ def print_item_children(conn, parent_item_id, indent):
             if recur:
                 task_text += f", +{recur}"
 
-            # Show due date
-            due = datetime.strptime(due_date, "%Y-%m-%d").date()
-            today = datetime.now().date()
-            if status != "done":
+            # Show completion date for completed tasks
+            if status == "done" and completion_date:
+                task_text += f", completed: {format_date_with_day(completion_date)}"
+            # Show due date for non-completed tasks
+            elif status != "done":
+                due = datetime.strptime(due_date, "%Y-%m-%d").date()
+                today = datetime.now().date()
                 if due < today:
                     task_text += Fore.RED + f", {format_date_with_day(due_date)}"
                 elif due == today:
