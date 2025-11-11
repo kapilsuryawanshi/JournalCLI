@@ -163,7 +163,7 @@ def calculate_next_due_date(original_due_date_str, recur_pattern):
         str: New due date in 'YYYY-MM-DD' format
     """
     # Parse the original due date
-    original_date = datetime.strptime(original_date_str, "%Y-%m-%d").date()
+    original_date = datetime.strptime(original_due_date_str, "%Y-%m-%d").date()
     
     # Parse the recurrence pattern
     number = int(recur_pattern[:-1])
