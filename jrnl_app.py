@@ -163,7 +163,7 @@ def calculate_next_due_date(original_due_date_str, recur_pattern):
         str: New due date in 'YYYY-MM-DD' format
     """
     # Parse the original due date
-    original_date = datetime.strptime(original_due_date_str, "%Y-%m-%d").date()
+    original_date = datetime.strptime(original_date_str, "%Y-%m-%d").date()
     
     # Parse the recurrence pattern
     number = int(recur_pattern[:-1])
@@ -236,6 +236,110 @@ def calculate_next_due_date(original_due_date_str, recur_pattern):
         new_date = original_date
     
     return new_date.strftime("%Y-%m-%d")
+
+
+def import_from_file(file_path, parent_id=None):
+    """
+    Import items from a file with indented structure.
+    
+    Args:
+        file_path (str): Path to the file to import
+        parent_id (int, optional): Parent ID to import under, or None for root level
+    
+    Returns:
+        list: List of root item IDs that were created
+    """
+    if not os.path.exists(file_path):
+        print(f"Error: File '{file_path}' does not exist")
+        return []
+
+    # Read the file
+    try:
+        with open(file_path, 'r', encoding='utf-8') as f:
+            lines = f.readlines()
+    except Exception as e:
+        print(f"Error reading file: {e}")
+        return []
+
+    # Parse the lines and create the hierarchy
+    root_items = []
+    stack = []  # Stack to keep track of parent items at each indentation level
+    
+    for line in lines:
+        line = line.rstrip()  # Remove trailing whitespace including newlines
+        
+        if not line.strip():
+            continue  # Skip empty lines
+            
+        # Count leading spaces to determine indentation level
+        indent_level = len(line) - len(line.lstrip())
+        
+        # Remove leading spaces
+        content = line.strip()
+        
+        if not content:
+            continue  # Skip lines with only spaces
+            
+        # Determine the type of item from the first character
+        item_type = 'note'  # Default
+        status = None
+        title = content
+        
+        if content.startswith('.'):
+            item_type = 'todo'
+            status = 'todo'
+            title = content[1:].strip()
+        elif content.startswith('x'):
+            item_type = 'todo'
+            status = 'done'
+            title = content[1:].strip()
+        elif content.startswith('/'):
+            item_type = 'todo'
+            status = 'doing'
+            title = content[1:].strip()
+        elif content.startswith('\\'):
+            item_type = 'todo'
+            status = 'waiting'
+            title = content[1:].strip()
+        elif content.startswith('-'):
+            item_type = 'note'
+            title = content[1:].strip()
+        else:
+            # Default case is a note
+            item_type = 'note'
+            title = content
+
+        # Adjust the stack to the right level
+        while len(stack) > indent_level:
+            stack.pop()
+        
+        # Determine the parent ID for this item
+        if len(stack) > 0:
+            parent_item_id = stack[-1]
+        else:
+            # No parent in the stack, use provided parent_id or None for root
+            parent_item_id = parent_id
+        
+        # Create the item
+        item_id = add_item(title, item_type, parent_item_id)
+        
+        # If this is a todo, update its status
+        if item_type == 'todo' and status:
+            update_todo_status(item_id, status)
+        
+        # Add this item to the appropriate level in the stack
+        if len(stack) == indent_level:
+            stack.append(item_id)
+        else:
+            # Replace the item at this level
+            stack = stack[:indent_level]  # Truncate to the right level
+            stack.append(item_id)
+        
+        # If this is a root item (indent level 0), add to root_items
+        if indent_level == 0:
+            root_items.append(item_id)
+    
+    return root_items
 
 # --- Display Helpers ---
 
@@ -2053,6 +2157,39 @@ def main():
             display_search_results(grouped)
         else:
             print("Error: Please provide search text")
+    elif cmd == "import":
+        if rest:
+            # Parse for parent ID in the format @<pid>
+            parent_id = None
+            start_idx = 0
+            
+            if rest and rest[0].startswith("@") and rest[0][1:].isdigit():
+                parent_id = int(rest[0][1:])  # Remove @ and convert to int
+                start_idx = 1  # Skip the first argument as it's the parent ID
+            
+            if len(rest) <= start_idx:
+                print("Error: Please provide a file path to import")
+                return
+            
+            file_path = rest[start_idx]
+            
+            # Check if parent exists if parent_id is provided
+            if parent_id is not None:
+                with sqlite3.connect(DB_FILE) as conn:
+                    parent_exists = conn.execute("SELECT id FROM items WHERE id=?", (parent_id,)).fetchone()
+                    if not parent_exists:
+                        print(f"Error: Parent item with ID {parent_id} does not exist")
+                        return
+            
+            # Import from file
+            imported_ids = import_from_file(file_path, parent_id)
+            
+            if imported_ids:
+                print(f"Imported {len(imported_ids)} root item(s) from '{file_path}'")
+            else:
+                print(f"No items imported from '{file_path}'")
+        else:
+            print("Error: Please provide a file path to import")
     elif cmd == "clear":
         if rest and rest[0] == "all":
             clear_all()
@@ -2085,6 +2222,8 @@ COMMANDS:
         List items with optional grouping
     j <start|restart|waiting|done> <id>[,<id>,...]
         Task status operations
+    j import [@<pid>] <file>
+        Import item structure from file with indented hierarchy
     j search <text>
         Search for tasks and notes containing text (supports wildcards: * = any chars, ? = single char)
     j clear all
