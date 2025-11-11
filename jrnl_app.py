@@ -389,7 +389,7 @@ def format_item(item, prefix=""):
         else:
             # For completed tasks, show completion date if available
             if completion_date:
-                text += f" completed: {format_date_with_day(completion_date)}"
+                text += f" (completed: {format_date_with_day(completion_date)})"
 
         return text + Style.RESET_ALL
     else:  # note
@@ -432,10 +432,9 @@ def print_item_tree(item, children, item_dict, is_last=True, prefix="", is_root=
     """
     item_id = item[0]  # item[0] is id
 
-    # For root items, use one tab
+    # For root items, don't add an extra tab (they'll be displayed normally)
     if is_root:
-        prefix_str = "\t"
-        print(format_item(item, prefix_str))
+        print(format_item(item, prefix))
     else:
         # For child items, use prefix with tab
         print(format_item(item, prefix + "\t"))
