@@ -1,4 +1,3 @@
-import argparse
 import sqlite3
 import os
 import sys
@@ -7,7 +6,6 @@ from collections import defaultdict
 from colorama import Fore, Back, Style, init
 import glob
 import shutil
-import time
 
 # Placeholder for database file path - will be set by command line arguments
 DB_FILE = None
