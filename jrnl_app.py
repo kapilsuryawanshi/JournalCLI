@@ -629,48 +629,55 @@ def update_task_status(task_ids, status, note_text=None):
                             (recur_pattern, new_task_id)
                         )
                     
-                    # Recreate the children hierarchy for the recurring task
-                    with sqlite3.connect(DB_FILE) as conn:
-                        # Get all children of the original task
-                        children = conn.execute(
-                            "SELECT id, type, title, creation_date FROM items WHERE pid=?",
-                            (tid,)
-                        ).fetchall()
-                    
-                    # Create corresponding children under the new task
-                    for child_id, child_type, child_title, child_creation_date in children:
-                        # Get the child's todo info (status, due date, etc.) if it's a todo
+                    # Recursively recreate the entire hierarchy of children
+                    def recreate_hierarchy_recursive(original_parent_id, new_parent_id):
+                        """Recursively recreate the hierarchy of children under a new parent."""
                         with sqlite3.connect(DB_FILE) as conn:
-                            todo_info = conn.execute(
-                                "SELECT status, due_date, completion_date, recur FROM todo_info WHERE item_id=?",
-                                (child_id,)
-                            ).fetchone()
+                            # Get all direct children of the original parent
+                            children = conn.execute(
+                                "SELECT id, type, title, creation_date FROM items WHERE pid=?",
+                                (original_parent_id,)
+                            ).fetchall()
                         
-                        # Create the child under the new parent task
-                        if child_type == 'todo':
-                            # For todo children, recreate with original details
-                            new_child_id = add_item_with_details(child_title, child_type, child_creation_date, new_task_id)
-                            
-                            # Update the todo_info for the new child task
+                        for child_id, child_type, child_title, child_creation_date in children:
+                            # Get the child's todo info (status, due date, etc.) if it's a todo
                             with sqlite3.connect(DB_FILE) as conn:
-                                # Reset status to 'todo' and update due_date and recurrence pattern for the new child
-                                update_query = "UPDATE todo_info SET"
-                                params = []
+                                todo_info = conn.execute(
+                                    "SELECT status, due_date, completion_date, recur FROM todo_info WHERE item_id=?",
+                                    (child_id,)
+                                ).fetchone()
+                            
+                            # Create the child under the new parent
+                            if child_type == 'todo':
+                                # For todo children, recreate with original details
+                                new_child_id = add_item_with_details(child_title, child_type, child_creation_date, new_parent_id)
                                 
-                                if todo_info:
-                                    original_status, due_date_val, completion_date_val, recur_val = todo_info
-                                    # Reset status to 'todo', preserve due date and recurrence pattern
-                                    update_query += " status=?, due_date=?, recur=? WHERE item_id=?"
-                                    params = ['todo', due_date_val, recur_val, new_child_id]
-                                else:
-                                    # Default values
-                                    update_query += " status=?, due_date=? WHERE item_id=?"
-                                    params = ['todo', child_creation_date, new_child_id]
-                                
-                                conn.execute(update_query, params)
-                        else:
-                            # For note children, just add them
-                            new_child_id = add_item(child_title, child_type, new_task_id)
+                                # Update the todo_info for the new child task
+                                with sqlite3.connect(DB_FILE) as conn:
+                                    # Reset status to 'todo' and update due_date and recurrence pattern for the new child
+                                    update_query = "UPDATE todo_info SET"
+                                    params = []
+                                    
+                                    if todo_info:
+                                        original_status, due_date_val, completion_date_val, recur_val = todo_info
+                                        # Reset status to 'todo', preserve due date and recurrence pattern
+                                        update_query += " status=?, due_date=?, recur=? WHERE item_id=?"
+                                        params = ['todo', due_date_val, recur_val, new_child_id]
+                                    else:
+                                        # Default values
+                                        update_query += " status=?, due_date=? WHERE item_id=?"
+                                        params = ['todo', child_creation_date, new_child_id]
+                                    
+                                    conn.execute(update_query, params)
+                            else:
+                                # For note children, just add them
+                                new_child_id = add_item(child_title, child_type, new_parent_id)
+                            
+                            # Recursively recreate the hierarchy under this new child
+                            recreate_hierarchy_recursive(child_id, new_child_id)
+                    
+                    # Start recreating the hierarchy from the original task's children
+                    recreate_hierarchy_recursive(tid, new_task_id)
                     
                     print(f"Created recurring task (id:{new_task_id}) due: {next_due_date}")
     
