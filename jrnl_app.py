@@ -341,6 +341,147 @@ def import_from_file(file_path, parent_id=None):
     
     return root_items
 
+def export_to_file(item_id, file_path):
+    """
+    Export items starting from a given ID to a file with indented structure.
+
+    Args:
+        item_id (int): The ID of the root item to export
+        file_path (str): Path to the file to export to
+
+    Returns:
+        bool: True if export was successful, False otherwise
+    """
+    with sqlite3.connect(DB_FILE) as conn:
+        # Get the root item
+        root_item = conn.execute(
+            "SELECT id, type, title, creation_date, pid FROM items WHERE id=?",
+            (item_id,)
+        ).fetchone()
+
+        if not root_item:
+            print(f"Error: Item with ID {item_id} does not exist")
+            return False
+
+    # Get all descendants using recursive query
+    with sqlite3.connect(DB_FILE) as conn:
+        all_descendants = conn.execute("""
+            WITH RECURSIVE item_tree AS (
+                -- Base case: the root item itself
+                SELECT id, type, title, creation_date, pid, 0 as level
+                FROM items
+                WHERE id = ?
+
+                UNION ALL
+
+                -- Recursive case: all child items
+                SELECT i.id, i.type, i.title, i.creation_date, i.pid, it.level + 1
+                FROM items i
+                JOIN item_tree it ON i.pid = it.id
+            )
+            SELECT id, type, title, creation_date, pid, level
+            FROM item_tree
+            ORDER BY id ASC
+        """, (item_id,)).fetchall()
+
+    if not all_descendants:
+        print(f"Error: Could not retrieve items for export starting from ID {item_id}")
+        return False
+
+    # Build the tree structure from the query results
+    item_dict = {item[0]: item for item in all_descendants}  # item[0] is id
+    children = {item[0]: [] for item in all_descendants}  # item[0] is id
+
+    # Build the tree structure
+    root_items = []
+    # Create a set of all item IDs for quick lookup
+    item_ids = {item[0] for item in all_descendants}
+
+    for item in all_descendants:
+        item_id = item[0]  # item[0] is id
+        parent_id = item[4]  # item[4] is pid
+
+        if parent_id is None or parent_id == 0 or parent_id not in item_ids:
+            # This is a root item in our export set (no parent, or parent is 0, or parent is not in this subset)
+            root_items.append(item)
+        else:
+            # This is a child item, add it to its parent's children
+            if parent_id in children:
+                children[parent_id].append(item)
+
+    # Prepare the content to write to the file
+    content_lines = []
+
+    # Recursively build the content with indentation
+    def build_content_recursive(item, current_level=0):
+        item_id, item_type, title, creation_date, pid, level = item
+        
+        # Get the status for todo items
+        prefix = ""
+        if item_type == 'todo':
+            # Get todo info
+            with sqlite3.connect(DB_FILE) as temp_conn:
+                todo_info = temp_conn.execute(
+                    "SELECT status FROM todo_info WHERE item_id=?",
+                    (item_id,)
+                ).fetchone()
+
+            if todo_info:
+                status = todo_info[0]
+            else:
+                # Default status if not in todo_info table
+                status = 'todo'
+
+            # Determine the prefix based on status
+            if status == 'done':
+                prefix = "x "
+            elif status == 'doing':
+                prefix = "/ "
+            elif status == 'waiting':
+                prefix = "\\ "
+            else:  # todo
+                prefix = ". "
+        else:  # note
+            prefix = "- "
+
+        # Add the appropriate indentation based on the level
+        indentation = "\t" * level
+        line = f"{indentation}{prefix}{title}"
+        content_lines.append(line)
+
+        # Process children
+        if item_id in children:
+            for child in children[item_id]:
+                # We need to set the level correctly for the child
+                # Get the actual level of the child from the database query
+                child_with_level = None
+                for item_from_query in all_descendants:
+                    if item_from_query[0] == child[0]:  # Match by id
+                        child_with_level = item_from_query
+                        break
+                if child_with_level:
+                    build_content_recursive(child_with_level, child_with_level[5])  # level is at index 5
+
+    # Process the root items (there should be just one in our case since we're exporting from a specific ID)
+    for root_item in root_items:
+        # Find the root item with its level info from all_descendants
+        root_with_level = None
+        for item in all_descendants:
+            if item[0] == root_item[0]:  # Match by id
+                root_with_level = item
+                break
+        if root_with_level:
+            build_content_recursive(root_with_level, root_with_level[5])  # level is at index 5
+
+    # Write the content to the file
+    try:
+        with open(file_path, 'w', encoding='utf-8') as f:
+            f.write('\n'.join(content_lines))
+        return True
+    except Exception as e:
+        print(f"Error writing to file: {e}")
+        return False
+
 # --- Display Helpers ---
 
 def format_item(item, prefix="", show_due_date=True):
@@ -2268,6 +2409,25 @@ def main():
                 print(f"No items imported from '{file_path}'")
         else:
             print("Error: Please provide a file path to import")
+    elif cmd == "export":
+        if len(rest) >= 2:
+            item_id_str, file_path = rest[0], rest[1]
+
+            if not item_id_str.isdigit():
+                print("Error: Please provide a valid item ID")
+                return
+
+            item_id = int(item_id_str)
+            
+            # Export the item to the specified file
+            success = export_to_file(item_id, file_path)
+            
+            if success:
+                print(f"Exported item {item_id} and its hierarchy to '{file_path}'")
+            else:
+                print(f"Failed to export item {item_id}")
+        else:
+            print("Error: Please provide an item ID and file path. Usage: j export <id> <file>")
     elif cmd == "backup":
         if not rest:
             print("Error: Please specify a backup operation: create, ls, or restore <file>")
@@ -2375,6 +2535,8 @@ COMMANDS:
         Task status operations
     j import [@<pid>] <file>
         Import item structure from file with indented hierarchy
+    j export <id> <file>
+        Export item structure starting from given ID to file with indented hierarchy
     j backup <create|list|restore <file>>
         Backup operations: create backup, list backups, or restore from backup
     j search <text>

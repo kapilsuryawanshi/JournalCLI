@@ -82,6 +82,11 @@ The application uses a simplified database schema with the following tables:
 - `j waiting task <id>,<id2>,...` - Mark task(s) as 'waiting'
 - `j restart task <id>,<id2>,...` - Mark task(s) as 'todo' again
 
+### Import/Export Operations
+
+- `j import [@<pid>] <file>` - Import item structure from file with indented hierarchy
+- `j export <id> <file>` - Export item structure starting from given ID to file with indented hierarchy
+
 ### Deleting Items
 
 - `j rm task <id>,<id2>,...` - Delete tasks
