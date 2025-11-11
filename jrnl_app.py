@@ -364,39 +364,39 @@ def format_item(item, prefix="", show_due_date=True):
 
         # Color based on status
         if status == "doing":
-            text = prefix + Back.YELLOW + Fore.BLACK + f"{checkbox} {title} (id:{item_id})" + Style.RESET_ALL
+            text = prefix + Back.YELLOW + Fore.BLACK + f"{checkbox} {title}, #{item_id}" + Style.RESET_ALL
         elif status == "waiting":
-            text = prefix + Back.LIGHTBLACK_EX + Fore.WHITE + f"{checkbox} {title} (id:{item_id})" + Style.RESET_ALL
+            text = prefix + Back.LIGHTBLACK_EX + Fore.WHITE + f"{checkbox} {title}, #{item_id}" + Style.RESET_ALL
         elif status == "done":
-            text = prefix + Fore.GREEN + f"{checkbox} {title} (id:{item_id})" + Style.RESET_ALL
+            text = prefix + Fore.GREEN + f"{checkbox} {title}, #{item_id}" + Style.RESET_ALL
         else:  # todo
-            text = prefix + f"{checkbox} {title}  (id:{item_id})"
+            text = prefix + f"{checkbox} {title}, #{item_id}"
 
         # Show recur pattern if it exists
         if recur:
-            text += f" (recur: {recur})"
+            text += f", +{recur}"
 
         # Show due date for non-completed tasks if show_due_date is True
         if status != "done" and show_due_date:
             due = datetime.strptime(due_date, "%Y-%m-%d").date()
             today = datetime.now().date()
             if due < today:
-                text += Fore.RED + f" (due: {format_date_with_day(due_date)})"
+                text += Fore.RED + f", {format_date_with_day(due_date)}"
             elif due == today:
-                text += Fore.CYAN + f" (due: {format_date_with_day(due_date)})"
+                text += Fore.CYAN + f", {format_date_with_day(due_date)}"
             else:
-                text += f" (due: {format_date_with_day(due_date)})"
+                text += f", {format_date_with_day(due_date)}"
         elif status != "done":
             # When show_due_date is False, don't show due date even if task is not done
             
             # For completed tasks, show completion date if available
             if completion_date:
-                text += f" (completed: {format_date_with_day(completion_date)})"
+                text += f", {format_date_with_day(completion_date)}"
 
         return text + Style.RESET_ALL
     else:  # note
         # For notes, simply return the formatted text
-        return prefix + Fore.YELLOW + f"> {title} (id:{item_id}) ({creation_date})" + Style.RESET_ALL
+        return prefix + Fore.YELLOW + f"- {title}, #{item_id}, {creation_date}" + Style.RESET_ALL
 
 def build_item_tree(items_list):
     """
@@ -1188,12 +1188,11 @@ def show_task():
 
 def show_note():
     with sqlite3.connect(DB_FILE) as conn:
-        # Get all root items (items that have no parent) for the note view
-        # This includes both notes and tasks that are root level
+        # Get only root note items (notes that have no parent) for the note view
         root_items = conn.execute("""
             SELECT id, type, title, creation_date, pid
             FROM items
-            WHERE pid IS NULL
+            WHERE pid IS NULL AND type = 'note'
             ORDER BY creation_date ASC, id ASC
         """).fetchall()
 
@@ -1254,7 +1253,7 @@ def print_item_children(conn, parent_item_id, indent):
     for child_item in child_items:
         item_id, item_type, title, creation_date, pid = child_item
         if item_type == 'note':
-            print(Fore.YELLOW + f"{indent}> {title} (id:{item_id}) ({creation_date})" + Style.RESET_ALL)
+            print(Fore.YELLOW + f"{indent}> {title}, #{item_id}, {creation_date}" + Style.RESET_ALL)
 
             # Recursively print children of this child item (grandchildren, etc.)
             print_item_children(conn, item_id, indent + "\t")
@@ -1276,28 +1275,28 @@ def print_item_children(conn, parent_item_id, indent):
 
             # Color based on status
             if status == "doing":
-                task_text = Back.YELLOW + Fore.BLACK + f"{checkbox} {title} (id:{item_id})" + Style.RESET_ALL
+                task_text = Back.YELLOW + Fore.BLACK + f"{checkbox} {title}, #{item_id}" + Style.RESET_ALL
             elif status == "waiting":
-                task_text = Back.LIGHTBLACK_EX + Fore.WHITE + f"{checkbox} {title} (id:{item_id})" + Style.RESET_ALL
+                task_text = Back.LIGHTBLACK_EX + Fore.WHITE + f"{checkbox} {title}, #{item_id}" + Style.RESET_ALL
             elif status == "done":
-                task_text = Fore.GREEN + f"{checkbox} {title} (id:{item_id})" + Style.RESET_ALL
+                task_text = Fore.GREEN + f"{checkbox} {title}, #{item_id}" + Style.RESET_ALL
             else:  # todo
-                task_text = f"{checkbox} {title}  (id:{item_id})"
+                task_text = f"{checkbox} {title}, #{item_id}"
 
             # Show recur pattern if it exists
             if recur:
-                task_text += f" (recur: {recur})"
+                task_text += f", +{recur}"
 
             # Show due date
             due = datetime.strptime(due_date, "%Y-%m-%d").date()
             today = datetime.now().date()
             if status != "done":
                 if due < today:
-                    task_text += Fore.RED + f" (due: {format_date_with_day(due_date)})"
+                    task_text += Fore.RED + f", {format_date_with_day(due_date)}"
                 elif due == today:
-                    task_text += Fore.CYAN + f" (due: {format_date_with_day(due_date)})"
+                    task_text += Fore.CYAN + f", {format_date_with_day(due_date)}"
                 else:
-                    task_text += f" (due: {format_date_with_day(due_date)})"
+                    task_text += f", {format_date_with_day(due_date)}"
 
             print(Fore.YELLOW + f"{indent}{task_text}" + Style.RESET_ALL)
 
@@ -1322,7 +1321,7 @@ def show_note_details(note_id):
             return
 
         # Print the note text in consistent format
-        print(Fore.YELLOW + f"- {title} (id:{item_id}) ({creation_date})" + Style.RESET_ALL)
+        print(Fore.YELLOW + f"- {title}, #{item_id}, {creation_date}" + Style.RESET_ALL)
 
         # Get child items (items that have this note as parent)
         child_items = conn.execute("""
@@ -1338,7 +1337,7 @@ def show_note_details(note_id):
             for child_item in child_items:
                 child_item_id, child_item_type, child_title, child_creation_date, child_pid = child_item
                 if child_item_type == 'note':
-                    print(Fore.YELLOW + f"\t> {child_title} (id:{child_item_id}) ({child_creation_date})" + Style.RESET_ALL)
+                    print(Fore.YELLOW + f"\t> {child_title}, {child_item_id}, {child_creation_date}" + Style.RESET_ALL)
                     # Recursively display children of this child note (if any)
                     show_child_item_details(conn, child_item_id, "\t\t")
                 elif child_item_type == 'todo':
@@ -1359,28 +1358,28 @@ def show_note_details(note_id):
 
                     # Color based on status
                     if status == "doing":
-                        task_text = Back.YELLOW + Fore.BLACK + f"{checkbox} {child_title} (id:{child_item_id})" + Style.RESET_ALL
+                        task_text = Back.YELLOW + Fore.BLACK + f"{checkbox} {child_title}, {child_item_id}" + Style.RESET_ALL
                     elif status == "waiting":
-                        task_text = Back.LIGHTBLACK_EX + Fore.WHITE + f"{child_title} (id:{child_item_id})" + Style.RESET_ALL
+                        task_text = Back.LIGHTBLACK_EX + Fore.WHITE + f"{child_title}, #{child_item_id}" + Style.RESET_ALL
                     elif status == "done":
-                        task_text = Fore.GREEN + f"{child_title} (id:{child_item_id})" + Style.RESET_ALL
+                        task_text = Fore.GREEN + f"{child_title}, #{child_item_id}" + Style.RESET_ALL
                     else:  # todo
-                        task_text = f"{checkbox} {child_title}  (id:{child_item_id})"
+                        task_text = f"{checkbox} {child_title}, #{child_item_id}"
 
                     # Show recur pattern if it exists
                     if recur:
-                        task_text += f" (recur: {recur})"
+                        task_text += f", +{recur}"
 
                     # Show due date
                     due = datetime.strptime(due_date, "%Y-%m-%d").date()
                     today = datetime.now().date()
                     if status != "done":
                         if due < today:
-                            task_text += Fore.RED + f" (due: {format_date_with_day(due_date)})"
+                            task_text += Fore.RED + f", {format_date_with_day(due_date)}"
                         elif due == today:
-                            task_text += Fore.CYAN + f" (due: {format_date_with_day(due_date)})"
+                            task_text += Fore.CYAN + f", {format_date_with_day(due_date)}"
                         else:
-                            task_text += f" (due: {format_date_with_day(due_date)})"
+                            task_text += f", {format_date_with_day(due_date)}"
 
                     print(Fore.YELLOW + f"\t{task_text}" + Style.RESET_ALL)
 
@@ -1412,7 +1411,7 @@ def show_note_details(note_id):
                     other_creation_date = link[6] # item1_creation_date
 
                 # Format the linked item consistently
-                print(Fore.CYAN + f"  - {other_item_title} (id:{other_item_id}, type:{other_item_type}) ({other_creation_date})" + Style.RESET_ALL)
+                print(Fore.CYAN + f"  - {other_item_title}, #{other_item_id}, {other_item_type}, {other_creation_date}" + Style.RESET_ALL)
         else:
             if not has_children:
                 print(Fore.CYAN + f"\nNo linked items found." + Style.RESET_ALL)
@@ -1431,7 +1430,7 @@ def show_child_item_details(conn, item_id, indent_prefix):
     for child_item in child_items:
         item_id, item_type, child_title, child_creation_date, child_pid = child_item
         if item_type == 'note':
-            print(Fore.YELLOW + f"{indent_prefix}> {child_title} (id:{item_id}) ({child_creation_date})" + Style.RESET_ALL)
+            print(Fore.YELLOW + f"{indent_prefix}> {child_title}, #{item_id}, {child_creation_date}" + Style.RESET_ALL)
 
             # Recursively display children of this child item (if any)
             show_child_item_details(conn, item_id, indent_prefix + "\t")
@@ -1453,28 +1452,28 @@ def show_child_item_details(conn, item_id, indent_prefix):
 
             # Color based on status
             if status == "doing":
-                task_text = Back.YELLOW + Fore.BLACK + f"{checkbox} {child_title} (id:{item_id})" + Style.RESET_ALL
+                task_text = Back.YELLOW + Fore.BLACK + f"{checkbox} {child_title}, #{item_id}" + Style.RESET_ALL
             elif status == "waiting":
-                task_text = Back.LIGHTBLACK_EX + Fore.WHITE + f"{child_title} (id:{item_id})" + Style.RESET_ALL
+                task_text = Back.LIGHTBLACK_EX + Fore.WHITE + f"{child_title}, #{item_id}" + Style.RESET_ALL
             elif status == "done":
-                task_text = Fore.GREEN + f"{child_title} (id:{item_id})" + Style.RESET_ALL
+                task_text = Fore.GREEN + f"{child_title}, #{item_id}" + Style.RESET_ALL
             else:  # todo
-                task_text = f"{checkbox} {child_title}  (id:{item_id})"
+                task_text = f"{checkbox} {child_title}, #{item_id}"
 
             # Show recur pattern if it exists
             if recur:
-                task_text += f" (recur: {recur})"
+                task_text += f", +{recur}"
 
             # Show due date
             due = datetime.strptime(due_date, "%Y-%m-%d").date()
             today = datetime.now().date()
             if status != "done":
                 if due < today:
-                    task_text += Fore.RED + f" (due: {format_date_with_day(due_date)})"
+                    task_text += Fore.RED + f", {format_date_with_day(due_date)}"
                 elif due == today:
-                    task_text += Fore.CYAN + f" (due: {format_date_with_day(due_date)})"
+                    task_text += Fore.CYAN + f", {format_date_with_day(due_date)}"
                 else:
-                    task_text += f" (due: {format_date_with_day(due_date)})"
+                    task_text += f", {format_date_with_day(due_date)}"
 
             print(Fore.YELLOW + f"{indent_prefix}{task_text}" + Style.RESET_ALL)
 
@@ -1592,7 +1591,7 @@ def show_item_details(item_id):
                     other_creation_date = link[6] # item1_creation_date
 
                 # Format the linked item consistently
-                print(Fore.CYAN + f"  - {other_item_title} (id:{other_item_id}, type:{other_item_type}) ({other_creation_date})" + Style.RESET_ALL)
+                print(Fore.CYAN + f"  - {other_item_title}, #{other_item_id}, type:{other_item_type}, {other_creation_date}" + Style.RESET_ALL)
         else:
             print(Fore.CYAN + f"\nNo linked items found." + Style.RESET_ALL)
 
