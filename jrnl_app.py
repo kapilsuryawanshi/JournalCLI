@@ -150,6 +150,93 @@ def parse_due(keyword):
             except ValueError:
                 return today  # fallback
 
+
+def calculate_next_due_date(original_due_date_str, recur_pattern):
+    """
+    Calculate the next due date based on the original due date and recurrence pattern.
+    
+    Args:
+        original_due_date_str (str): Original due date in 'YYYY-MM-DD' format
+        recur_pattern (str): Recurrence pattern like '2d', '1w', '3m', '1y'
+    
+    Returns:
+        str: New due date in 'YYYY-MM-DD' format
+    """
+    # Parse the original due date
+    original_date = datetime.strptime(original_due_date_str, "%Y-%m-%d").date()
+    
+    # Parse the recurrence pattern
+    number = int(recur_pattern[:-1])
+    unit = recur_pattern[-1].lower()
+    
+    # Calculate the next date based on the unit
+    if unit == 'd':  # Days
+        new_date = original_date + timedelta(days=number)
+    elif unit == 'w':  # Weeks
+        new_date = original_date + timedelta(weeks=number)
+    elif unit == 'm':  # Months
+        # Adding months is more complex because months have different lengths
+        year = original_date.year
+        month = original_date.month + number
+        
+        # Handle year overflow
+        while month > 12:
+            year += 1
+            month -= 12
+        
+        # Get the day - try to keep the same day, but adjust for shorter months
+        day = original_date.day
+        max_day = 31
+        # Find the maximum day for the target month
+        while True:
+            try:
+                test_date = date(year, month, day)
+                new_date = test_date
+                break
+            except ValueError:
+                day -= 1
+                if day <= 0:
+                    # If the day becomes invalid, use the last day of the month
+                    # Find last day of previous month and add 1 to get to target month
+                    if month == 1:
+                        last_day_of_prev_month = date(year - 1, 12, 31) - date(year - 1, 11, 30)
+                        day = 30  # Use 30 as fallback
+                    else:
+                        last_day_prev_month = date(year, month - 1, 1) - timedelta(days=1)
+                        day = last_day_prev_month.day
+                    try:
+                        new_date = date(year, month, day)
+                        break
+                    except ValueError:
+                        # If still invalid, reduce day further
+                        day -= 1
+                        if day <= 0:
+                            day = 1
+                        new_date = date(year, month, day)
+                        break
+    
+    elif unit == 'y':  # Years
+        year = original_date.year + number
+        month = original_date.month
+        day = original_date.day
+        
+        # Handle leap year edge cases
+        try:
+            new_date = date(year, month, day)
+        except ValueError:
+            # If date is not valid (e.g., Feb 29 on a non-leap year), use Feb 28
+            if month == 2 and day == 29:
+                new_date = date(year, 2, 28)
+            else:
+                # This shouldn't happen in normal cases, but just in case
+                new_date = date(year, month, min(day, [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][month-1]))
+    
+    else:
+        # Default to original date if unit is unknown
+        new_date = original_date
+    
+    return new_date.strftime("%Y-%m-%d")
+
 # --- Display Helpers ---
 
 def format_item(item, prefix=""):
@@ -368,6 +455,15 @@ def update_task_status(task_ids, status, note_text=None):
     """Update the status of task items"""
     updated_count = 0
     for tid in task_ids:
+        # Get the current task details before updating the status
+        with sqlite3.connect(DB_FILE) as conn:
+            task_details = conn.execute("""
+                SELECT i.title, i.pid, t.recur, t.due_date 
+                FROM items i
+                JOIN todo_info t ON i.id = t.item_id
+                WHERE i.id = ?
+            """, (tid,)).fetchone()
+        
         # Update todo status
         update_todo_status(tid, status)
         updated_count += 1
@@ -375,6 +471,35 @@ def update_task_status(task_ids, status, note_text=None):
         # Add note to the completed task if provided
         if status == 'done' and note_text:
             add_note([], note_text)
+
+        # Handle recurring tasks: create a new task if this one has a recurrence pattern
+        if status == 'done' and task_details:
+            title, parent_id, recur_pattern, original_due_date = task_details
+            if recur_pattern:
+                # Calculate the next due date based on the recurrence pattern
+                next_due_date = calculate_next_due_date(original_due_date, recur_pattern)
+                
+                # Get the original task's details to create a new one
+                with sqlite3.connect(DB_FILE) as conn:
+                    original_task = conn.execute(
+                        "SELECT type, title, creation_date FROM items WHERE id=?",
+                        (tid,)
+                    ).fetchone()
+
+                if original_task:
+                    task_type, task_title, creation_date = original_task
+                    # Create a new task with the same title and parent, but updated due date
+                    new_task_id = add_item_with_details(task_title, task_type, next_due_date, parent_id)
+                    
+                    # Set the recurrence pattern for the new task
+                    with sqlite3.connect(DB_FILE) as conn:
+                        # Since todo_info entry was created by add_item_with_details, update the recur field
+                        conn.execute(
+                            "UPDATE todo_info SET recur=? WHERE item_id=?",
+                            (recur_pattern, new_task_id)
+                        )
+                    
+                    print(f"Created recurring task (id:{new_task_id}) due: {next_due_date}")
     
     if updated_count > 0:
         status_display = "undone" if status == "todo" else status
@@ -1960,8 +2085,6 @@ COMMANDS:
         List items with optional grouping
     j <start|restart|waiting|done> <id>[,<id>,...]
         Task status operations
-    j done <id>[,<id>,...]
-        Mark task(s) as done
     j search <text>
         Search for tasks and notes containing text (supports wildcards: * = any chars, ? = single char)
     j clear all
