@@ -123,6 +123,8 @@ def parse_due(keyword):
         return today
     elif keyword == "tomorrow":
         return today + timedelta(days=1)
+    elif keyword == "yesterday":
+        return today - timedelta(days=1)
     elif keyword == "eow":
         return today + timedelta(days=(6 - today.weekday()))
     elif keyword == "eom":
