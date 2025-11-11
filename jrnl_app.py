@@ -378,21 +378,20 @@ def format_item(item, prefix="", show_due_date=True):
             text += f", +{recur}"
 
         # Show due date for non-completed tasks if show_due_date is True
-        if status != "done" and show_due_date:
-            due = datetime.strptime(due_date, "%Y-%m-%d").date()
-            today = datetime.now().date()
-            if due < today:
-                text += Fore.RED + f", {format_date_with_day(due_date)}"
-            elif due == today:
-                text += Fore.CYAN + f", {format_date_with_day(due_date)}"
+        if show_due_date:
+            if status != "done":
+                due = datetime.strptime(due_date, "%Y-%m-%d").date()
+                today = datetime.now().date()
+                if due < today:
+                    text += Fore.RED + f", {format_date_with_day(due_date)}"
+                elif due == today:
+                    text += Fore.CYAN + f", {format_date_with_day(due_date)}"
+                else:
+                    text += f", {format_date_with_day(due_date)}"
             else:
-                text += f", {format_date_with_day(due_date)}"
-        elif status != "done":
-            # When show_due_date is False, don't show due date even if task is not done
-            
-            # For completed tasks, show completion date if available
-            if completion_date:
-                text += f", {format_date_with_day(completion_date)}"
+                # For completed tasks, show completion date if available
+                if completion_date:
+                    text += f", {format_date_with_day(completion_date)}"
 
         return text + Style.RESET_ALL
     else:  # note
