@@ -341,7 +341,7 @@ def import_from_file(file_path, parent_id=None):
 
 # --- Display Helpers ---
 
-def format_item(item, prefix=""):
+def format_item(item, prefix="", show_due_date=True):
     """Format an item (todo or note) for display"""
     # item has: id, type, title, creation_date, pid
     item_id, item_type, title, creation_date, pid = item
@@ -376,8 +376,8 @@ def format_item(item, prefix=""):
         if recur:
             text += f" (recur: {recur})"
 
-        # Show due date for non-completed tasks
-        if status != "done":
+        # Show due date for non-completed tasks if show_due_date is True
+        if status != "done" and show_due_date:
             due = datetime.strptime(due_date, "%Y-%m-%d").date()
             today = datetime.now().date()
             if due < today:
@@ -386,7 +386,9 @@ def format_item(item, prefix=""):
                 text += Fore.CYAN + f" (due: {format_date_with_day(due_date)})"
             else:
                 text += f" (due: {format_date_with_day(due_date)})"
-        else:
+        elif status != "done":
+            # When show_due_date is False, don't show due date even if task is not done
+            
             # For completed tasks, show completion date if available
             if completion_date:
                 text += f" (completed: {format_date_with_day(completion_date)})"
@@ -426,12 +428,12 @@ def build_item_tree(items_list):
 
     return root_items, children, item_dict
 
-def print_item_tree(item, children, item_dict, is_last=True, prefix="", is_root=True):
+def print_item_tree(item, children, item_dict, is_last=True, prefix="", is_root=True, show_due_date=True):
     """
     Recursively print an item and its children in a tree structure using tab indentation.
     """
     item_id = item[0]  # item[0] is id
-    print(format_item(item, prefix))
+    print(format_item(item, prefix, show_due_date))
 
     # Recursively print children with appropriate prefixes - add one more tab for children
     if item_id in children and children[item_id]:
@@ -439,7 +441,7 @@ def print_item_tree(item, children, item_dict, is_last=True, prefix="", is_root=
             is_last_child = (i == len(children[item_id]) - 1)
             # For children, we need to add an additional tab level
             child_prefix = prefix + "\t"
-            print_item_tree(child, children, item_dict, is_last_child, child_prefix, is_root=False)
+            print_item_tree(child, children, item_dict, is_last_child, child_prefix, is_root=False, show_due_date=show_due_date)
 
 # --- Command Handlers ---
 
@@ -1123,8 +1125,8 @@ def show_due():
                     bucket_info['item_dict'], 
                     is_last, 
                     "\t", 
-                    is_root=True
-                
+                    is_root=True,
+                    show_due_date=False
                 )
 def show_task():
     with sqlite3.connect(DB_FILE) as conn:
