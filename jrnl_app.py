@@ -2225,6 +2225,87 @@ def main():
                 print(f"No items imported from '{file_path}'")
         else:
             print("Error: Please provide a file path to import")
+    elif cmd == "backup":
+        if not rest:
+            print("Error: Please specify a backup operation: create, ls, or restore <file>")
+        elif rest[0] == "create":
+            import shutil
+            import time
+            from datetime import datetime
+            
+            # Get the directory where the database file is located
+            db_dir = os.path.dirname(DB_FILE)
+            db_name = os.path.basename(DB_FILE)
+            name, ext = os.path.splitext(db_name)
+            
+            # Create a timestamped backup filename
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            backup_filename = f"{name}_backup_{timestamp}{ext}"
+            backup_path = os.path.join(db_dir, backup_filename)
+            
+            try:
+                # Copy the database file to the backup location
+                shutil.copy2(DB_FILE, backup_path)
+                print(f"Backup created: {backup_path}")
+            except Exception as e:
+                print(f"Error creating backup: {e}")
+                
+        elif rest[0] == "ls":
+            import glob
+            from datetime import datetime
+            
+            # Get the directory where the database file is located
+            db_dir = os.path.dirname(DB_FILE)
+            db_name = os.path.basename(DB_FILE)
+            name, ext = os.path.splitext(db_name)
+            
+            # Look for backup files with the pattern: {name}_backup_YYYYMMDD_HHMMSS{ext}
+            backup_pattern = os.path.join(db_dir, f"{name}_backup_*{ext}")
+            backup_files = glob.glob(backup_pattern)
+            
+            # Sort the files by modification time (newest first)
+            backup_files.sort(key=lambda x: os.path.getmtime(x), reverse=True)
+            
+            if not backup_files:
+                print("No backup files found.")
+            else:
+                print("Available backup files:")
+                for backup_file in backup_files:
+                    mtime = os.path.getmtime(backup_file)
+                    mtime_str = datetime.fromtimestamp(mtime).strftime("%Y-%m-%d %H:%M:%S")
+                    backup_name = os.path.basename(backup_file)
+                    print(f"  {backup_name} (modified: {mtime_str})")
+                    
+        elif rest[0] == "restore" and len(rest) >= 2:
+            import shutil
+            backup_file = rest[1]
+            
+            # Get the directory where the database file is located
+            db_dir = os.path.dirname(DB_FILE)
+            full_backup_path = os.path.join(db_dir, backup_file)
+            
+            # Check if the backup file exists
+            if not os.path.exists(full_backup_path):
+                print(f"Error: Backup file '{backup_file}' does not exist")
+                return
+            
+            # Ask for confirmation before restoring
+            print(f"Warning: You are about to restore from '{backup_file}'")
+            print("This will replace your current database file.")
+            confirmation = input("Type 'yes' to confirm restore: ").strip().lower()
+            
+            if confirmation != 'yes':
+                print("Restore operation cancelled.")
+                return
+            
+            try:
+                # Copy the backup file to the current database location
+                shutil.copy2(full_backup_path, DB_FILE)
+                print(f"Database restored from: {full_backup_path}")
+            except Exception as e:
+                print(f"Error restoring database: {e}")
+        else:
+            print("Error: Invalid backup operation. Use 'create', 'ls', or 'restore <file>'")
     elif cmd == "clear":
         if rest and rest[0] == "all":
             clear_all()
@@ -2259,6 +2340,8 @@ COMMANDS:
         Task status operations
     j import [@<pid>] <file>
         Import item structure from file with indented hierarchy
+    j backup <create|ls|restore <file>>
+        Backup operations: create backup, list backups, or restore from backup
     j search <text>
         Search for tasks and notes containing text (supports wildcards: * = any chars, ? = single char)
     j clear all
