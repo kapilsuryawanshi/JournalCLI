@@ -263,9 +263,10 @@ def import_from_file(file_path, parent_id=None):
 
     # Parse the lines and create the hierarchy
     root_items = []
-    stack = []  # Stack to keep track of parent items at each indentation level
+    # Stack to keep track of items at each indentation level: [(indent_level, item_id), ...]
+    stack = []  
     
-    for line in lines:
+    for line_num, line in enumerate(lines, start=1):
         line = line.rstrip()  # Remove trailing whitespace including newlines
         
         if not line.strip():
@@ -309,15 +310,15 @@ def import_from_file(file_path, parent_id=None):
             item_type = 'note'
             title = content
 
-        # Adjust the stack to the right level
-        while len(stack) > indent_level:
-            stack.pop()
+        # Adjust the stack to the right level - remove items with indent >= current indent
+        # This ensures we're at the right level for the parent
+        stack = [(level, item_id) for level, item_id in stack if level < indent_level]
         
         # Determine the parent ID for this item
-        if len(stack) > 0:
-            parent_item_id = stack[-1]
+        if stack and stack[-1][0] < indent_level:  # If there's a parent at a higher level
+            parent_item_id = stack[-1][1]  # Get the item_id of the last item in stack
         else:
-            # No parent in the stack, use provided parent_id or None for root
+            # No suitable parent in the stack, use provided parent_id or None for root
             parent_item_id = parent_id
         
         # Create the item
@@ -327,15 +328,10 @@ def import_from_file(file_path, parent_id=None):
         if item_type == 'todo' and status:
             update_todo_status(item_id, status)
         
-        # Add this item to the appropriate level in the stack
-        if len(stack) == indent_level:
-            stack.append(item_id)
-        else:
-            # Replace the item at this level
-            stack = stack[:indent_level]  # Truncate to the right level
-            stack.append(item_id)
+        # Add this item to the stack at its level
+        stack.append((indent_level, item_id))
         
-        # If this is a root item (indent level 0), add to root_items
+        # If this is a root item (indent level 0 relative to import context), add to root_items
         if indent_level == 0:
             root_items.append(item_id)
     
