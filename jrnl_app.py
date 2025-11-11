@@ -276,6 +276,10 @@ def import_from_file(file_path, parent_id=None):
         if not line.strip():
             continue  # Skip empty lines
             
+        # Skip comment lines that start with #
+        if line.strip().startswith('#'):
+            continue
+            
         # Count leading spaces to determine indentation level
         indent_level = len(line) - len(line.lstrip())
         
@@ -481,6 +485,295 @@ def export_to_file(item_id, file_path):
     except Exception as e:
         print(f"Error writing to file: {e}")
         return False
+
+
+def open_file_in_editor(file_path):
+    """
+    Open the specified file in the system's default editor.
+    
+    Args:
+        file_path (str): The path to the file to open in editor
+    
+    Returns:
+        bool: True if successful, False otherwise
+    """
+    import os
+    import subprocess
+    
+    # Determine the editor to use
+    editor = os.environ.get('EDITOR')
+    
+    # If no EDITOR is set, try common defaults based on OS
+    if not editor:
+        import platform
+        system = platform.system()
+        if system == "Windows":
+            # On Windows, try to use notepad or other common editors
+            editor = "notepad"
+        elif system == "Darwin":  # macOS
+            editor = "open -t"  # Use open with text editor
+        else:  # Linux and other Unix-like systems
+            # Try common editors in order of preference
+            for common_editor in ['vim', 'nano', 'gedit', 'code', 'subl']:
+                if subprocess.run(['which', common_editor], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0:
+                    editor = common_editor
+                    break
+            if not editor:
+                editor = 'nano'  # Default fallback
+
+    try:
+        # Execute the editor command with the file
+        if editor == "open -t":  # Special case for macOS open command
+            subprocess.run([editor.split()[0], file_path] + editor.split()[1:], check=True)
+        else:
+            subprocess.run([editor, file_path], check=True)
+        return True
+    except subprocess.CalledProcessError:
+        print(f"Error: Editor '{editor}' failed to open file '{file_path}'")
+        return False
+    except FileNotFoundError:
+        print(f"Error: Editor '{editor}' not found. Please set the EDITOR environment variable.")
+        return False
+    except Exception as e:
+        print(f"Error opening file in editor: {e}")
+        return False
+
+
+def enhanced_import_with_editor(parent_id=None):
+    """
+    Import items by opening a temporary file in the system editor.
+    
+    Args:
+        parent_id (int, optional): Parent ID to import under, or None for root level
+    
+    Returns:
+        list: List of root item IDs that were created
+    """
+    import tempfile
+    import os
+    
+    # Create a temporary file
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False) as temp_file:
+        # Write initial content or leave empty for user to fill
+        temp_file.write("# Add your items here, format:\n")
+        temp_file.write("# . Task to do\n")
+        temp_file.write("# x Completed task\n")
+        temp_file.write("# / Task in progress\n")
+        temp_file.write("# \\ Waiting task\n")
+        temp_file.write("# - Note\n")
+        temp_file.write("# Use tabs for hierarchy\n")
+        temp_file.write("# Lines starting with # are comments and will be ignored\n")
+        temp_file_path = temp_file.name
+    
+    try:
+        # Open the temporary file in editor
+        success = open_file_in_editor(temp_file_path)
+        if not success:
+            print("Failed to open editor, import cancelled")
+            return []
+        
+        # Import from the temporary file
+        imported_ids = import_from_file(temp_file_path, parent_id)
+        
+        if imported_ids:
+            print(f"Imported {len(imported_ids)} root item(s) from temporary file")
+        else:
+            print("No items imported or import failed")
+        
+        return imported_ids
+        
+    finally:
+        # Clean up the temporary file regardless of success/failure
+        try:
+            os.unlink(temp_file_path)
+        except:
+            pass  # File might be locked on Windows, just skip cleanup
+
+
+def enhanced_export_with_editor(item_id):
+    """
+    Export items to a temporary file and open it in the system editor.
+    
+    Args:
+        item_id (int): The ID of the root item to export
+    
+    Returns:
+        bool: True if successful, False otherwise
+    """
+    import tempfile
+    import os
+    
+    # Create a temporary file
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False) as temp_file:
+        temp_file_path = temp_file.name
+    
+    try:
+        # Export to the temporary file
+        success = export_to_file(item_id, temp_file_path)
+        if not success:
+            print(f"Failed to export item {item_id}")
+            return False
+        
+        # Open the temporary file in editor
+        success = open_file_in_editor(temp_file_path)
+        if not success:
+            print("Failed to open editor, but export was successful")
+            return False
+        
+        print(f"Exported item {item_id} to temporary file and opened in editor")
+        return True
+        
+    finally:
+        # Clean up the temporary file regardless of success/failure
+        try:
+            os.unlink(temp_file_path)
+        except:
+            pass  # File might be locked on Windows, just skip cleanup
+
+
+def export_entire_database(file_path):
+    """
+    Export all items in the database to a file with indented structure.
+    This function exports the 'forest' of all root items and their hierarchies.
+
+    Args:
+        file_path (str): Path to the file to export to
+
+    Returns:
+        bool: True if export was successful, False otherwise
+    """
+    with sqlite3.connect(DB_FILE) as conn:
+        # Get all items, ordered by creation date and id
+        all_items = conn.execute(
+            "SELECT id, type, title, creation_date, pid FROM items ORDER BY creation_date ASC, id ASC"
+        ).fetchall()
+
+    if not all_items:
+        # Database is empty, create empty file
+        try:
+            with open(file_path, 'w', encoding='utf-8') as f:
+                f.write('')  # Create an empty file
+            return True
+        except Exception as e:
+            print(f"Error creating empty export file: {e}")
+            return False
+
+    # Build the complete tree structure from all items
+    item_dict = {item[0]: item for item in all_items}  # item[0] is id
+    children = {item[0]: [] for item in all_items}  # item[0] is id
+
+    # Create a set of all item IDs in this database for quick lookup
+    item_ids = {item[0] for item in all_items}
+
+    # Build the tree structure connecting parents and children
+    root_items = []
+    for item in all_items:
+        item_id = item[0]  # item[0] is id
+        parent_id = item[4]  # item[4] is pid
+
+        if parent_id is None or parent_id == 0 or parent_id not in item_ids:
+            # This is a root item (no parent, or parent is 0, or parent is not in database)
+            root_items.append(item)
+        else:
+            # This is a child item, add it to its parent's children
+            if parent_id in children:
+                children[parent_id].append(item)
+
+    # Prepare the content to write to the file
+    content_lines = []
+
+    # Define a nested function to recursively build content for each tree
+    def build_content_recursive(item, current_level=0):
+        item_id, item_type, title, creation_date, pid = item
+        
+        # Get the status for todo items
+        prefix = ""
+        if item_type == 'todo':
+            # Get todo info
+            with sqlite3.connect(DB_FILE) as temp_conn:
+                todo_info = temp_conn.execute(
+                    "SELECT status FROM todo_info WHERE item_id=?",
+                    (item_id,)
+                ).fetchone()
+
+            if todo_info:
+                status = todo_info[0]
+            else:
+                # Default status if not in todo_info table
+                status = 'todo'
+
+            # Determine the prefix based on status
+            if status == 'done':
+                prefix = "x "
+            elif status == 'doing':
+                prefix = "/ "
+            elif status == 'waiting':
+                prefix = "\\ "
+            else:  # todo
+                prefix = ". "
+        else:  # note
+            prefix = "- "
+
+        # Add the appropriate indentation based on the level
+        indentation = "\t" * current_level
+        line = f"{indentation}{prefix}{title}"
+        content_lines.append(line)
+
+        # Process children of this item
+        if item_id in children:
+            for child in children[item_id]:
+                build_content_recursive(child, current_level + 1)
+
+    # Process all root items (trees in the forest)
+    for root_item in root_items:
+        build_content_recursive(root_item, 0)
+
+    # Write the content to the file
+    try:
+        with open(file_path, 'w', encoding='utf-8') as f:
+            f.write('\n'.join(content_lines))
+        return True
+    except Exception as e:
+        print(f"Error writing to file: {e}")
+        return False
+
+
+def enhanced_export_entire_database_with_editor():
+    """
+    Export entire database to a temporary file and open it in the system editor.
+
+    Returns:
+        bool: True if successful, False otherwise
+    """
+    import tempfile
+    import os
+    
+    # Create a temporary file
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False) as temp_file:
+        temp_file_path = temp_file.name
+    
+    try:
+        # Export entire database to the temporary file
+        success = export_entire_database(temp_file_path)
+        if not success:
+            print("Failed to export entire database")
+            return False
+        
+        # Open the temporary file in editor
+        success = open_file_in_editor(temp_file_path)
+        if not success:
+            print("Failed to open editor, but export was successful")
+            return False
+        
+        print(f"Exported entire database to temporary file and opened in editor")
+        return True
+        
+    finally:
+        # Clean up the temporary file regardless of success/failure
+        try:
+            os.unlink(temp_file_path)
+        except:
+            pass  # File might be locked on Windows, just skip cleanup
 
 # --- Display Helpers ---
 
@@ -2377,19 +2670,17 @@ def main():
         else:
             print("Error: Please provide search text")
     elif cmd == "import":
-        if rest:
-            # Parse for parent ID in the format @<pid>
-            parent_id = None
-            start_idx = 0
-            
-            if rest and rest[0].startswith("@") and rest[0][1:].isdigit():
-                parent_id = int(rest[0][1:])  # Remove @ and convert to int
-                start_idx = 1  # Skip the first argument as it's the parent ID
-            
-            if len(rest) <= start_idx:
-                print("Error: Please provide a file path to import")
-                return
-            
+        # Parse for parent ID in the format @<pid>
+        parent_id = None
+        start_idx = 0
+        
+        if rest and rest[0].startswith("@") and rest[0][1:].isdigit():
+            parent_id = int(rest[0][1:])  # Remove @ and convert to int
+            start_idx = 1  # Skip the first argument as it's the parent ID
+
+        # Check if a file path is provided as the second argument
+        if len(rest) > start_idx:
+            # File path provided - use existing import functionality
             file_path = rest[start_idx]
             
             # Check if parent exists if parent_id is provided
@@ -2408,26 +2699,46 @@ def main():
             else:
                 print(f"No items imported from '{file_path}'")
         else:
-            print("Error: Please provide a file path to import")
+            # No file path provided - use enhanced editor functionality
+            imported_ids = enhanced_import_with_editor(parent_id)
     elif cmd == "export":
-        if len(rest) >= 2:
-            item_id_str, file_path = rest[0], rest[1]
-
-            if not item_id_str.isdigit():
-                print("Error: Please provide a valid item ID")
-                return
-
+        # Check if an item ID is provided as the first argument
+        if len(rest) >= 1 and rest[0].isdigit():
+            # Item ID provided
+            item_id_str = rest[0]
             item_id = int(item_id_str)
             
-            # Export the item to the specified file
-            success = export_to_file(item_id, file_path)
-            
-            if success:
-                print(f"Exported item {item_id} and its hierarchy to '{file_path}'")
+            # Check if a file path is provided as the second argument
+            if len(rest) >= 2:
+                # File path provided - use existing export functionality
+                file_path = rest[1]
+                
+                # Export the item to the specified file
+                success = export_to_file(item_id, file_path)
+                
+                if success:
+                    print(f"Exported item {item_id} and its hierarchy to '{file_path}'")
+                else:
+                    print(f"Failed to export item {item_id}")
             else:
-                print(f"Failed to export item {item_id}")
+                # No file path provided - use enhanced editor functionality
+                success = enhanced_export_with_editor(item_id)
         else:
-            print("Error: Please provide an item ID and file path. Usage: j export <id> <file>")
+            # No item ID provided, export entire database
+            # Check if a file path is provided as the first argument
+            if len(rest) >= 1:
+                # File path provided - export entire database to specified file
+                file_path = rest[0]
+                
+                success = export_entire_database(file_path)
+                
+                if success:
+                    print(f"Exported entire database to '{file_path}'")
+                else:
+                    print("Failed to export entire database")
+            else:
+                # No file path provided - use enhanced editor functionality for entire database
+                success = enhanced_export_entire_database_with_editor()
     elif cmd == "backup":
         if not rest:
             print("Error: Please specify a backup operation: create, ls, or restore <file>")
@@ -2533,10 +2844,10 @@ COMMANDS:
         List items with optional grouping
     j <start|restart|waiting|done> <id>[,<id>,...]
         Task status operations
-    j import [@<pid>] <file>
-        Import item structure from file with indented hierarchy
-    j export <id> <file>
-        Export item structure starting from given ID to file with indented hierarchy
+    j import [@<pid>] [<file>]
+        Import item structure from file with indented hierarchy (if file not provided, opens editor)
+    j export [<id>] [<file>]
+        Export either entire database (if no ID provided) or item structure starting from given ID to file with indented hierarchy (if file not provided, opens editor)
     j backup <create|list|restore <file>>
         Backup operations: create backup, list backups, or restore from backup
     j search <text>

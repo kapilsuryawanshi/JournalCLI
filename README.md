@@ -84,8 +84,8 @@ The application uses a simplified database schema with the following tables:
 
 ### Import/Export Operations
 
-- `j import [@<pid>] <file>` - Import item structure from file with indented hierarchy
-- `j export <id> <file>` - Export item structure starting from given ID to file with indented hierarchy
+- `j import [@<pid>] <file>` - Import item structure from file with indented hierarchy (opens editor if file not provided)
+- `j export [<id>] <file>` - Export entire database (if no ID provided) or item structure starting from given ID to file with indented hierarchy (opens editor if file not provided)
 
 ### Deleting Items
 
