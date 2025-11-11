@@ -431,13 +431,7 @@ def print_item_tree(item, children, item_dict, is_last=True, prefix="", is_root=
     Recursively print an item and its children in a tree structure using tab indentation.
     """
     item_id = item[0]  # item[0] is id
-
-    # For root items, add one tab to maintain tree structure
-    if is_root:
-        print(format_item(item, prefix + "\t"))
-    else:
-        # For child items, use prefix with tab
-        print(format_item(item, prefix + "\t"))
+    print(format_item(item, prefix))
 
     # Recursively print children with appropriate prefixes - add one more tab for children
     if item_id in children and children[item_id]:
@@ -963,7 +957,7 @@ def show_journal():
             root_items, children, item_dict = build_item_tree(day_items)
             for i, root_item in enumerate(root_items):
                 is_last = (i == len(root_items) - 1)
-                print_item_tree(root_item, children, item_dict, is_last, "", is_root=True)
+                print_item_tree(root_item, children, item_dict, is_last, "\t", is_root=True)
 
 def show_due():
     with sqlite3.connect(DB_FILE) as conn:
@@ -1120,7 +1114,7 @@ def show_due():
                     bucket_info['children'], 
                     bucket_info['item_dict'], 
                     is_last, 
-                    "", 
+                    "\t", 
                     is_root=True
                 
                 )
@@ -1651,7 +1645,7 @@ def display_search_results(grouped):
                 root_items, children, item_dict = build_item_tree(items_for_day)
                 for i, root_item in enumerate(root_items):
                     is_last = (i == len(root_items) - 1)
-                    print_item_tree(root_item, children, item_dict, is_last, "", is_root=True)
+                    print_item_tree(root_item, children, item_dict, is_last, "\t", is_root=True)
 
 def show_completed_tasks():
     with sqlite3.connect(DB_FILE) as conn:
@@ -1687,7 +1681,7 @@ def show_completed_tasks():
         root_items, children, item_dict = build_item_tree(date_items)
         for i, root_item in enumerate(root_items):
             is_last = (i == len(root_items) - 1)
-            print_item_tree(root_item, children, item_dict, is_last, "", is_root=True)
+            print_item_tree(root_item, children, item_dict, is_last, "\t", is_root=True)
 
 def show_tasks_by_status():
     with sqlite3.connect(DB_FILE) as conn:
@@ -1764,7 +1758,7 @@ def show_tasks_by_status():
                 # Print each root node in the hierarchy (should be just the main root we started with)
                 for j, item_node in enumerate(all_root_nodes):
                     item_is_last = (j == len(all_root_nodes) - 1) and is_last
-                    print_item_tree(item_node, all_children, all_item_dict, item_is_last, "", is_root=True)
+                    print_item_tree(item_node, all_children, all_item_dict, item_is_last, "\t", is_root=True)
 
 # --- CLI Parser ---
 
