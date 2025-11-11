@@ -432,9 +432,9 @@ def print_item_tree(item, children, item_dict, is_last=True, prefix="", is_root=
     """
     item_id = item[0]  # item[0] is id
 
-    # For root items, don't add an extra tab (they'll be displayed normally)
+    # For root items, add one tab to maintain tree structure
     if is_root:
-        print(format_item(item, prefix))
+        print(format_item(item, prefix + "\t"))
     else:
         # For child items, use prefix with tab
         print(format_item(item, prefix + "\t"))
