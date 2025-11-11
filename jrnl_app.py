@@ -16,7 +16,8 @@ def format_date_with_day(date_str):
     """Format a date string (YYYY-MM-DD) to include the day name"""
     try:
         date_obj = datetime.strptime(date_str, "%Y-%m-%d")
-        return date_obj.strftime("%A, %Y-%m-%d")
+        #return date_obj.strftime("%A %Y-%m-%d")
+        return date_obj.strftime("%Y-%m-%d")
     except ValueError:
         # If parsing fails, return the original string
         return date_str
@@ -627,6 +628,49 @@ def update_task_status(task_ids, status, note_text=None):
                             "UPDATE todo_info SET recur=? WHERE item_id=?",
                             (recur_pattern, new_task_id)
                         )
+                    
+                    # Recreate the children hierarchy for the recurring task
+                    with sqlite3.connect(DB_FILE) as conn:
+                        # Get all children of the original task
+                        children = conn.execute(
+                            "SELECT id, type, title, creation_date FROM items WHERE pid=?",
+                            (tid,)
+                        ).fetchall()
+                    
+                    # Create corresponding children under the new task
+                    for child_id, child_type, child_title, child_creation_date in children:
+                        # Get the child's todo info (status, due date, etc.) if it's a todo
+                        with sqlite3.connect(DB_FILE) as conn:
+                            todo_info = conn.execute(
+                                "SELECT status, due_date, completion_date, recur FROM todo_info WHERE item_id=?",
+                                (child_id,)
+                            ).fetchone()
+                        
+                        # Create the child under the new parent task
+                        if child_type == 'todo':
+                            # For todo children, recreate with original details
+                            new_child_id = add_item_with_details(child_title, child_type, child_creation_date, new_task_id)
+                            
+                            # Update the todo_info for the new child task
+                            with sqlite3.connect(DB_FILE) as conn:
+                                # Update status, due_date, and recurrence pattern for the new child
+                                update_query = "UPDATE todo_info SET"
+                                params = []
+                                
+                                if todo_info:
+                                    status_val, due_date_val, completion_date_val, recur_val = todo_info
+                                    # Use original status and due date values, not the completion status
+                                    update_query += " status=?, due_date=?, recur=? WHERE item_id=?"
+                                    params = [status_val, due_date_val, recur_val, new_child_id]
+                                else:
+                                    # Default values
+                                    update_query += " status=?, due_date=? WHERE item_id=?"
+                                    params = ['todo', child_creation_date, new_child_id]
+                                
+                                conn.execute(update_query, params)
+                        else:
+                            # For note children, just add them
+                            new_child_id = add_item(child_title, child_type, new_task_id)
                     
                     print(f"Created recurring task (id:{new_task_id}) due: {next_due_date}")
     
