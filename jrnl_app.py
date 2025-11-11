@@ -653,15 +653,15 @@ def update_task_status(task_ids, status, note_text=None):
                             
                             # Update the todo_info for the new child task
                             with sqlite3.connect(DB_FILE) as conn:
-                                # Update status, due_date, and recurrence pattern for the new child
+                                # Reset status to 'todo' and update due_date and recurrence pattern for the new child
                                 update_query = "UPDATE todo_info SET"
                                 params = []
                                 
                                 if todo_info:
-                                    status_val, due_date_val, completion_date_val, recur_val = todo_info
-                                    # Use original status and due date values, not the completion status
+                                    original_status, due_date_val, completion_date_val, recur_val = todo_info
+                                    # Reset status to 'todo', preserve due date and recurrence pattern
                                     update_query += " status=?, due_date=?, recur=? WHERE item_id=?"
-                                    params = [status_val, due_date_val, recur_val, new_child_id]
+                                    params = ['todo', due_date_val, recur_val, new_child_id]
                                 else:
                                     # Default values
                                     update_query += " status=?, due_date=? WHERE item_id=?"
