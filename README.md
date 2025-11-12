@@ -9,7 +9,7 @@ JournalCLI is a command-line tool for managing tasks and notes with a hierarchic
 - **Due Dates**: Set due dates for tasks with various formats (tomorrow, eow, specific dates)
 - **Recurrence**: Set recurring tasks (daily, weekly, monthly, yearly)
 - **Hierarchical Structure**: Tasks and notes can have parent-child relationships
-- **Linking**: Link items together for better organization
+
 - **Search**: Search through tasks and notes
 - **Simplified Database Schema**: Uses a streamlined database schema for better performance
 
@@ -41,10 +41,7 @@ The application uses a simplified database schema with the following tables:
    - completion_date: Date when the task was completed
    - recur: Recurrence pattern for recurring tasks
 
-3. **item_links** - Links between items
-   - id: Primary key
-   - item1_id: First item in the link
-   - item2_id: Second item in the link
+
 
 ## Usage
 
@@ -69,7 +66,7 @@ The application uses a simplified database schema with the following tables:
 
 - `j note @<parent_note_id> "child note text"` - Add note under a parent note
 - `j note <id> -text "new text"` - Edit a note
-- `j note <id> -link <id1>,<id2>` - Link a note to other items
+
 
 ### View Items
 
@@ -141,7 +138,7 @@ python -m pytest test_new_schema.py -v
 
 ## Changes from Previous Version
 
-This version implements a simplified database schema by consolidating the three tables (tasks, notes, note_links) into two main tables (items, todo_info) with a linking table (item_links). This provides a more unified and maintainable approach to managing both tasks and notes.
+This version implements a simplified database schema by consolidating the three tables (tasks, notes, note_links) into two main tables (items, todo_info). This provides a more unified and maintainable approach to managing both tasks and notes.
 
 ## Contributing
 
