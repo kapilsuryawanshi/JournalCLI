@@ -949,12 +949,14 @@ def update_task_status(task_ids, status, note_text=None):
                 # Get the original task's details to create a new one
                 with sqlite3.connect(DB_FILE) as conn:
                     original_task = conn.execute(
-                        "SELECT type, title, creation_date FROM items WHERE id=?",
+                        "SELECT status, title, creation_date FROM items WHERE id=?",
                         (tid,)
                     ).fetchone()
 
                 if original_task:
-                    task_type, task_title, creation_date = original_task
+                    status, task_title, creation_date = original_task
+                    task_type = 'note' if status == 'note' else 'todo'
+                    
                     # Create a new task with the same title and parent, but updated due date
                     new_task_id = add_item_with_details(task_title, task_type, next_due_date, parent_id)
                     
