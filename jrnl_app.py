@@ -1403,7 +1403,7 @@ def show_task():
         # A root task is defined as: a task which does not have any parent or which does not have a task as parent
         # So we want tasks where pid IS NULL OR where the parent item has status 'note'
         root_items = conn.execute("""
-            SELECT id, status, title, creation_date, pid
+            SELECT *
             FROM items
             WHERE status IN ('todo', 'doing', 'waiting') 
               AND (pid IS NULL OR pid IN (SELECT id FROM items WHERE status = 'note'))
@@ -1430,17 +1430,17 @@ def show_task():
                 all_descendants = temp_conn.execute("""
                     WITH RECURSIVE item_tree AS (
                         -- Base case: the root item itself
-                        SELECT id, type, title, creation_date, pid
+                        SELECT id, status, title, creation_date, pid
                         FROM items
                         WHERE id = ?
 
                         UNION ALL
                         -- Recursive case: all child items
-                        SELECT i.id, i.type, i.title, i.creation_date, i.pid
+                        SELECT i.id, i.status, i.title, i.creation_date, i.pid
                         FROM items i
                         JOIN item_tree it ON i.pid = it.id
                     )
-                    SELECT id, type, title, creation_date, pid
+                    SELECT id, status, title, creation_date, pid
                     FROM item_tree
                     ORDER BY id
                 """, (root_item[0],)).fetchall()  # root_item[0] is id
@@ -1457,9 +1457,9 @@ def show_note():
     with sqlite3.connect(DB_FILE) as conn:
         # Get only root note items (notes that have no parent) for the note view
         root_items = conn.execute("""
-            SELECT id, type, title, creation_date, pid
+            SELECT *
             FROM items
-            WHERE pid IS NULL AND type = 'note'
+            WHERE pid IS NULL AND status = 'note'
             ORDER BY creation_date ASC, id ASC
         """).fetchall()
 
@@ -1483,17 +1483,17 @@ def show_note():
                 all_descendants = temp_conn.execute("""
                     WITH RECURSIVE item_tree AS (
                         -- Base case: the root item itself
-                        SELECT id, type, title, creation_date, pid
+                        SELECT id, status, title, creation_date, pid
                         FROM items
                         WHERE id = ?
 
                         UNION ALL
                         -- Recursive case: all child items
-                        SELECT i.id, i.type, i.title, i.creation_date, i.pid
+                        SELECT i.id, i.status, i.title, i.creation_date, i.pid
                         FROM items i
                         JOIN item_tree it ON i.pid = it.id
                     )
-                    SELECT id, type, title, creation_date, pid
+                    SELECT id, status, title, creation_date, pid
                     FROM item_tree
                     ORDER BY id ASC
                 """, (root_item[0],)).fetchall()  # root_item[0] is id
@@ -1821,18 +1821,18 @@ def show_item_details(item_id):
         all_related_items = conn.execute("""
             WITH RECURSIVE item_tree AS (
                 -- Base case: the selected item
-                SELECT id, type, title, creation_date, pid
+                SELECT id, status, title, creation_date, pid
                 FROM items
                 WHERE id = ?
 
                 UNION ALL
 
                 -- Recursive case: child items
-                SELECT i.id, i.type, i.title, i.creation_date, i.pid
+                SELECT i.id, i.status, i.title, i.creation_date, i.pid
                 FROM items i
                 JOIN item_tree it ON i.pid = it.id
             )
-            SELECT * FROM item_tree
+            SELECT id, status, title, creation_date, pid FROM item_tree
             ORDER BY id;
             """, (item_id,)).fetchall()
 
@@ -1993,17 +1993,17 @@ def show_tasks_by_status():
                     all_descendants = temp_conn.execute("""
                         WITH RECURSIVE item_tree AS (
                             -- Base case: the root item itself
-                            SELECT id, type, title, creation_date, pid
+                            SELECT id, status, title, creation_date, pid
                             FROM items
                             WHERE id = ?
 
                             UNION ALL
                             -- Recursive case: all child items (including completed ones)
-                            SELECT i.id, i.type, i.title, i.creation_date, i.pid
+                            SELECT i.id, i.status, i.title, i.creation_date, i.pid
                             FROM items i
                             JOIN item_tree it ON i.pid = it.id
                         )
-                        SELECT id, type, title, creation_date, pid
+                        SELECT id, status, title, creation_date, pid
                         FROM item_tree
                         ORDER BY id ASC
                     """, (root_item[0],)).fetchall()  # root_item[0] is id
