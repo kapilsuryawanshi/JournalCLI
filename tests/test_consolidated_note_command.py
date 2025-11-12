@@ -53,7 +53,7 @@ def test_consolidated_note_edit_text():
         with redirect_stdout(f):
             # Manually execute the equivalent of the main function logic
             new_text = "Updated note text"
-            result = jrnl_app.edit_note(note_id, new_text)
+            result = jrnl_app.edit_item(note_id, new_text)
             
         # Verify the result
         assert result is True
@@ -137,7 +137,7 @@ def test_consolidated_note_edit_text_and_link():
         note3_id = notes[2][0]
     
     # First, edit the text using the edit_note function
-    result1 = jrnl_app.edit_note(note1_id, "Updated text with links")
+    result1 = jrnl_app.edit_item(note1_id, "Updated text with links")
     assert result1 is True
     
     # Then link to both other notes

@@ -44,7 +44,7 @@ def test_consolidated_task_edit_text():
         task_id = task[0]
     
     # Simulate the edit_task function call
-    result = jrnl_app.edit_task(task_id, "Updated task text")
+    result = jrnl_app.edit_item(task_id, "Updated task text")
     assert result is True
     
     # Verify the text was updated in the database
@@ -130,7 +130,7 @@ def test_consolidated_task_multiple_operations():
     
     # Perform multiple operations
     # 1. Edit text
-    jrnl_app.edit_task(task_id, "Updated task text")
+    jrnl_app.edit_item(task_id, "Updated task text")
     
     # 2. Set due date
     tomorrow = (datetime.now().date() + timedelta(days=1))

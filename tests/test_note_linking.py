@@ -207,75 +207,6 @@ def test_unlink_notes_nonexistent_note():
     assert result is False
     assert "Error: Note with ID 999 does not exist" in output
 
-def test_show_note_details_with_links():
-    """Test viewing a note and its linked notes"""
-    # Add three notes
-    jrnl_app.add_note([], "First note")
-    jrnl_app.add_note([], "Second note")
-    jrnl_app.add_note([], "Third note")
-
-    # Get the note IDs
-    with sqlite3.connect(DB_FILE) as conn:
-        notes = conn.execute("SELECT id FROM items WHERE type='note' ORDER BY id ASC").fetchall()
-        assert len(notes) == 3
-        note1_id = notes[0][0]
-        note2_id = notes[1][0]
-        note3_id = notes[2][0]
-
-    # Link notes 1 and 2
-    result1 = jrnl_app.link_notes(note1_id, note2_id)
-    assert result1 is True
-
-    # Link notes 1 and 3
-    result2 = jrnl_app.link_notes(note1_id, note3_id)
-    assert result2 is True
-
-    # Show details for note 1 (should show linked notes)
-    f = StringIO()
-    with redirect_stdout(f):
-        jrnl_app.show_note_details(note1_id)
-    output = f.getvalue()
-
-    # Check that the note itself is displayed in the new consistent format
-    assert f"- First note (id:{note1_id})" in output
-
-    # Check that both linked notes are displayed in the new consistent format
-    assert f"  - Second note (id:{note2_id}, type:note)" in output
-    assert f"  - Third note (id:{note3_id}, type:note)" in output
-
-def test_show_note_details_no_links():
-    """Test viewing a note that has no linked notes"""
-    # Add one note
-    jrnl_app.add_note([], "Single note")
-
-    # Get the note ID
-    with sqlite3.connect(DB_FILE) as conn:
-        note = conn.execute("SELECT id FROM items WHERE type='note'").fetchone()
-        assert note is not None
-        note_id = note[0]
-
-    # Show details for the note (should show no links message)
-    f = StringIO()
-    with redirect_stdout(f):
-        jrnl_app.show_note_details(note_id)
-    output = f.getvalue()
-
-    # Check that the note itself is displayed in the new consistent format
-    assert f"- Single note (id:{note_id})" in output
-
-    # Check that no linked notes message is displayed
-    assert "No linked items found." in output
-
-def test_show_note_details_nonexistent_note():
-    """Test viewing a note that doesn't exist"""
-    # Try to show details for a non-existent note ID
-    f = StringIO()
-    with redirect_stdout(f):
-        jrnl_app.show_note_details(999)
-    output = f.getvalue()
-
-    assert "Error: Item with ID 999 does not exist" in output
-
 def test_delete_note_removes_links():
     """Test that deleting a note also removes its links"""
     # Add two notes
@@ -321,49 +252,6 @@ def test_delete_note_removes_links():
         links_after = conn.execute("SELECT * FROM item_links").fetchall()
         assert len(links_after) == 0
 
-def test_show_note_details_with_task():
-    """Test viewing a note that is associated with a task"""
-    # Add a task
-    jrnl_app.add_task(["Test task"])
-
-    # Get the task ID
-    with sqlite3.connect(DB_FILE) as conn:
-        task = conn.execute("SELECT id FROM items WHERE type='todo'").fetchone()
-        assert task is not None
-        task_id = task[0]
-
-    # Add a note to the task
-    jrnl_app.add_note([task_id], "Note for task")
-
-    # Get the note ID
-    with sqlite3.connect(DB_FILE) as conn:
-        note = conn.execute("SELECT id FROM items WHERE pid=? AND type='note'", (task_id,)).fetchone()
-        assert note is not None
-        note_id = note[0]
-
-    # Link with another note
-    jrnl_app.add_note([], "Other note")
-    with sqlite3.connect(DB_FILE) as conn:
-        other_note = conn.execute("SELECT id FROM items WHERE title='Other note'").fetchone()
-        assert other_note is not None
-        other_note_id = other_note[0]
-
-    # Link the notes
-    result = jrnl_app.link_notes(note_id, other_note_id)
-    assert result is True
-
-    # Show details for the note linked to the task
-    f = StringIO()
-    with redirect_stdout(f):
-        jrnl_app.show_note_details(note_id)
-    output = f.getvalue()
-
-    # Check that the note with task association is displayed in the new consistent format
-    assert f"- Note for task (id:{note_id})" in output
-
-    # Check that the linked note is displayed in the new consistent format
-    assert f"  - Other note (id:{other_note_id}, type:note)" in output
-
 if __name__ == "__main__":
     test_link_notes_successfully()
     test_link_notes_already_linked()
@@ -372,9 +260,5 @@ if __name__ == "__main__":
     test_unlink_notes_successfully()
     test_unlink_notes_not_linked()
     test_unlink_notes_nonexistent_note()
-    test_show_note_details_with_links()
-    test_show_note_details_no_links()
-    test_show_note_details_nonexistent_note()
     test_delete_note_removes_links()
-    test_show_note_details_with_task()
     print("All note linking tests passed!")

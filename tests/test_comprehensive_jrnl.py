@@ -474,7 +474,7 @@ def test_edit_task_title():
         task_id = task[0]
     
     # Edit the task title
-    result = jrnl_app.edit_task(task_id, "New task title")
+    result = jrnl_app.edit_item(task_id, "New task title")
     assert result is True
     
     # Verify the task title was updated
@@ -498,7 +498,7 @@ def test_edit_note_text():
         note_id = note[0]
     
     # Edit the note text
-    result = jrnl_app.edit_note(note_id, "New note text")
+    result = jrnl_app.edit_item(note_id, "New note text")
     assert result is True
     
     # Verify the note text was updated
@@ -595,7 +595,7 @@ def test_search_functionality():
     assert "Added standalone note with id" in output
     
     # Test searching for the task
-    grouped, tasks, notes = jrnl_app.search_tasks_and_notes("Searchable")
+    grouped, tasks, notes = jrnl_app.search_items("Searchable")
     
     # Should find both the task and the note
     found_task = False

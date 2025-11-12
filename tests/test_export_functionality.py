@@ -101,7 +101,7 @@ def test_export_hierarchy():
     # Add a child note under the root note using parent_note_id parameter
     f = StringIO()
     with redirect_stdout(f):
-        child_note_ids = jrnl_app.add_note_under_note(root_note_id, "Child note")
+        child_note_ids = jrnl_app.add_item("Child note", "note", root_note_id)
     output = f.getvalue()
     assert "Added note" in output
     child_note_id = child_note_ids
@@ -109,7 +109,7 @@ def test_export_hierarchy():
     # Add a grandchild note under the child note
     f = StringIO()
     with redirect_stdout(f):
-        grandchild_note_id = jrnl_app.add_note_under_note(child_note_id, "Grandchild note")
+        grandchild_note_id = jrnl_app.add_item("Grandchild note", "note", child_note_id)
     output = f.getvalue()
     assert "Added note" in output
 

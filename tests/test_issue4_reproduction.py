@@ -46,7 +46,7 @@ def test_show_due_shows_complete_hierarchy():
     with jrnl_app.sqlite3.connect(jrnl_app.DB_FILE) as conn:
         for task_id in [task1_id, task11_id, task12_id, task111_id, task2_id, task3_id]:
             conn.execute(
-                "UPDATE todo_info SET due_date=? WHERE item_id=?",
+                "UPDATE items SET due_date=? WHERE id=?",
                 (today, task_id)
             )
     
@@ -128,7 +128,7 @@ def test_original_issue_scenario():
     with jrnl_app.sqlite3.connect(jrnl_app.DB_FILE) as conn:
         for task_id in [task1, task2, task3, task11, task12, task111]:
             conn.execute(
-                "UPDATE todo_info SET due_date=? WHERE item_id=?",
+                "UPDATE items SET due_date=? WHERE id=?",
                 (today, task_id)
             )
     

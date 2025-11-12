@@ -79,20 +79,19 @@ def parse_due(keyword):
             except ValueError:
                 return today  # fallback
 
-
-def calculate_next_due_date(original_due_date_str, recur_pattern):
+def calculate_next_due_date(from_date_str, recur_pattern):
     """
     Calculate the next due date based on the original due date and recurrence pattern.
     
     Args:
-        original_due_date_str (str): Original due date in 'YYYY-MM-DD' format
+        from_date_str (str): From date in 'YYYY-MM-DD' format
         recur_pattern (str): Recurrence pattern like '2d', '1w', '3m', '1y'
     
     Returns:
         str: New due date in 'YYYY-MM-DD' format
     """
     # Parse the original due date
-    original_date = datetime.strptime(original_due_date_str, "%Y-%m-%d").date()
+    original_date = datetime.strptime(from_date_str, "%Y-%m-%d").date()
     
     # Parse the recurrence pattern
     number = int(recur_pattern[:-1])
@@ -166,7 +165,6 @@ def calculate_next_due_date(original_due_date_str, recur_pattern):
     
     return new_date.strftime("%Y-%m-%d")
 
-
 def import_from_file(file_path, parent_id=None):
     """
     Import items from a file with indented structure.
@@ -237,10 +235,12 @@ def import_from_file(file_path, parent_id=None):
             title = content[1:].strip()
         elif content.startswith('-'):
             item_type = 'note'
+            status = 'note'
             title = content[1:].strip()
         else:
             # Default case is a note
             item_type = 'note'
+            status = 'note'
             title = content
 
         # Adjust the stack to the right level - remove items with indent >= current indent
@@ -257,9 +257,7 @@ def import_from_file(file_path, parent_id=None):
         # Create the item
         item_id = add_item(title, item_type, parent_item_id)
         
-        # If this is a todo, update its status
-        if item_type == 'todo' and status:
-            update_todo_status(item_id, status)
+        update_status(item_id, status)
         
         # Add this item to the stack at its level
         stack.append((indent_level, item_id))
@@ -269,6 +267,22 @@ def import_from_file(file_path, parent_id=None):
             root_items.append(item_id)
     
     return root_items
+
+def determine_prefix_from_status(status):
+    prefix = ""
+    if status in ['todo', 'doing', 'waiting', 'done']:
+        # This is a todo item - determine prefix based on actual status
+        if status == 'done':
+            prefix = "x "
+        elif status == 'doing':
+            prefix = "/ "
+        elif status == 'waiting':
+            prefix = "\\ "
+        else:  # 'todo'
+            prefix = ". "
+    else:  # 'note' 
+        prefix = "- "
+    return prefix
 
 def export_to_file(item_id, file_path):
     """
@@ -340,25 +354,13 @@ def export_to_file(item_id, file_path):
 
     # Prepare the content to write to the file
     content_lines = []
-
+    
     # Recursively build the content with indentation
     def build_content_recursive(item, current_level=0):
         item_id, status, title, creation_date, pid, level = item
         
         # Determine the prefix based on the item status
-        prefix = ""
-        if status in ['todo', 'doing', 'waiting', 'done']:
-            # This is a todo item - determine prefix based on actual status
-            if status == 'done':
-                prefix = "x "
-            elif status == 'doing':
-                prefix = "/ "
-            elif status == 'waiting':
-                prefix = "\\ "
-            else:  # 'todo'
-                prefix = ". "
-        else:  # 'note' 
-            prefix = "- "
+        prefix = determine_prefix_from_status(status)
 
         # Add the appropriate indentation based on the level
         indentation = "\t" * level
@@ -396,7 +398,6 @@ def export_to_file(item_id, file_path):
     except Exception as e:
         print(f"Error writing to file: {e}")
         return False
-
 
 def open_file_in_editor(file_path):
     """
@@ -449,8 +450,7 @@ def open_file_in_editor(file_path):
         print(f"Error opening file in editor: {e}")
         return False
 
-
-def enhanced_import_with_editor(parent_id=None):
+def import_with_editor(parent_id=None):
     """
     Import items by opening a temporary file in the system editor.
     
@@ -500,8 +500,7 @@ def enhanced_import_with_editor(parent_id=None):
         except:
             pass  # File might be locked on Windows, just skip cleanup
 
-
-def enhanced_export_with_editor(item_id):
+def export_with_editor(item_id):
     """
     Export items to a temporary file and open it in the system editor.
     
@@ -540,7 +539,6 @@ def enhanced_export_with_editor(item_id):
             os.unlink(temp_file_path)
         except:
             pass  # File might be locked on Windows, just skip cleanup
-
 
 def export_entire_database(file_path):
     """
@@ -598,20 +596,8 @@ def export_entire_database(file_path):
         item_id, status, title, creation_date, pid = item  # Note: in new schema, second column is status, not type
         
         # Determine the prefix based on the item status
-        prefix = ""
-        if status in ['todo', 'doing', 'waiting', 'done']:
-            # This is a todo item - determine prefix based on actual status
-            if status == 'done':
-                prefix = "x "
-            elif status == 'doing':
-                prefix = "/ "
-            elif status == 'waiting':
-                prefix = "\\ "
-            else:  # 'todo'
-                prefix = ". "
-        else:  # 'note' 
-            prefix = "- "
-
+        prefix = determine_prefix_from_status(status)
+ 
         # Add the appropriate indentation based on the level
         indentation = "\t" * current_level
         line = f"{indentation}{prefix}{title}"
@@ -635,8 +621,7 @@ def export_entire_database(file_path):
         print(f"Error writing to file: {e}")
         return False
 
-
-def enhanced_export_entire_database_with_editor():
+def export_entire_database_with_editor():
     """
     Export entire database to a temporary file and open it in the system editor.
 
@@ -675,6 +660,61 @@ def enhanced_export_entire_database_with_editor():
 
 # --- Display Helpers ---
 
+def get_item_details(item_id):
+    """
+    Get detailed information about an item including status, due date, completion date, and recurrence pattern.
+    
+    Args:
+        item_id (int): The ID of the item to get details for
+        
+    Returns:
+        tuple: (status, due_date, completion_date, recur) or (None, None, None, None) if not found
+    """
+    with sqlite3.connect(DB_FILE) as conn:
+        item_info = conn.execute(
+            "SELECT status, due_date, completion_date, recur FROM items WHERE id=?",
+            (item_id,)
+        ).fetchone()
+
+    if item_info:
+        status, due_date, completion_date, recur = item_info
+    else:
+        # Default values
+        status, due_date, completion_date, recur = None, None, None, None
+
+    return status, due_date, completion_date, recur
+
+def format_status_text(status, title, item_id):
+    """
+    Format the text for an item based on its status.
+    
+    Args:
+        status (str): The status of the item ('todo', 'doing', 'waiting', 'done', 'note')
+        title (str): The title/text of the item
+        item_id (int): The ID of the item
+        
+    Returns:
+        str: Formatted text based on the status
+    """
+    if status in ['todo', 'doing', 'waiting', 'done']:
+        # This is a todo item
+        checkbox = "[x]" if status == "done" else "[ ]"
+
+        # Color based on status
+        if status == "doing":
+            text = Back.YELLOW + Fore.BLACK + f"{checkbox} {title}, #{item_id}" + Style.RESET_ALL
+        elif status == "waiting":
+            text = Back.LIGHTBLACK_EX + Fore.WHITE + f"{checkbox} {title}, #{item_id}" + Style.RESET_ALL
+        elif status == "done":
+            text = Fore.GREEN + f"{checkbox} {title}, #{item_id}" + Style.RESET_ALL
+        else:  # todo
+            text = f"{checkbox} {title}, #{item_id}"
+    else:  # note
+        # For notes, return the formatted text
+        text = Fore.YELLOW + f"- {title}, #{item_id}" + Style.RESET_ALL
+
+    return text
+
 def format_item(item, prefix="", show_due_date=True):
     """Format an item (todo or note) for display"""
     # item has: id, status, title, creation_date, pid (as per new schema)
@@ -696,17 +736,14 @@ def format_item(item, prefix="", show_due_date=True):
             text = prefix + f"{checkbox} {title}, #{item_id}"
 
         # Get additional todo info from the same row
-        with sqlite3.connect(DB_FILE) as conn:
-            todo_info = conn.execute(
-                "SELECT status, due_date, completion_date, recur FROM items WHERE id=?",
-                (item_id,)
-            ).fetchone()
-            
-        if todo_info:
-            status_val, due_date_val, completion_date_val, recur_val = todo_info
-        else:
-            # Default values if not found in the database
-            status_val, due_date_val, completion_date_val, recur_val = status, creation_date, None, None
+        status_val, due_date_val, completion_date_val, recur_val = get_item_details(item_id)
+        
+        # If details weren't found in the database, use the values from the item parameter
+        if status_val is None:
+            status_val = status
+            due_date_val = creation_date  # Use creation date as fallback
+            completion_date_val = completion_date
+            recur_val = None
 
         # Show recur pattern if it exists
         if recur_val:
@@ -792,20 +829,9 @@ def add_item(title, item_type, parent_id=None):
         int: The ID of the newly created item
     """
     today = datetime.now().date().strftime("%Y-%m-%d")
-    with sqlite3.connect(DB_FILE) as conn:
-        # Map item_type to appropriate status for the new schema
-        # For 'note' items, status should be 'note'
-        # For 'todo' items, status should be 'todo' (default for tasks)
-        status = 'note' if item_type == 'note' else 'todo'
-        
-        cursor = conn.execute(
-            "INSERT INTO items (title, status, creation_date, due_date, pid) VALUES (?, ?, ?, ?, ?)",
-            (title, status, today, today, parent_id)
-        )
-        item_id = cursor.lastrowid
-    
-    return item_id
-    
+    return add_item_with_details(title, item_type, today, parent_id)
+
+# For test cases only    
 def add_task(texts):
     """Add a new task (todo item)"""
     added_task_ids = []
@@ -828,42 +854,24 @@ def add_task(texts):
 
     return added_task_ids
 
-def add_note_under_note(parent_note_id, text):
-    """Add a note under another specific note"""
-    # Verify the parent note exists
+def item_exists(item_id):
+    """Check if an item with the given ID exists in the database"""
     with sqlite3.connect(DB_FILE) as conn:
-        parent_note = conn.execute("SELECT id FROM items WHERE id=? AND status='note'", (parent_note_id,)).fetchone()
-        if not parent_note:
-            print(f"Error: Parent note with ID {parent_note_id} does not exist")
-            return False
+        item = conn.execute("SELECT id FROM items WHERE id=?", (item_id,)).fetchone()
+        return item is not None
 
-    # Add the note with parent_id
-    item_id = add_item(text, "note", parent_note_id)
-    print(f"Added note with id {item_id} under parent note {parent_note_id}")
-    return item_id
-
+# For test cases only
 def add_note(task_ids, text, parent_note_id=None):
     """Add a note, either standalone, under a task, or under another note"""
     added_note_ids = []
     
-    if not task_ids and parent_note_id is None:
-        # Add standalone note
-        item_id = add_item(text, "note")
-        added_note_ids.append(item_id)
-    elif parent_note_id is not None:
+    if not task_ids:
         # Add note under parent note
         item_id = add_item(text, "note", parent_note_id)
         added_note_ids.append(item_id)
-    elif task_ids:
+    else:
         # Add note under tasks - for each task ID, create a note with that task as parent
         for tid in task_ids:
-            # Verify the parent task exists
-            with sqlite3.connect(DB_FILE) as conn:
-                parent_task = conn.execute("SELECT id FROM items WHERE id=? AND status IN ('todo', 'doing', 'waiting', 'done')", (tid,)).fetchone()
-                if not parent_task:
-                    print(f"Error: Parent task with ID {tid} does not exist")
-                    continue
-            
             item_id = add_item(text, "note", tid)  # Using tid as parent id
             added_note_ids.append(item_id)
 
@@ -904,7 +912,6 @@ def has_incomplete_children(task_id):
         
         return len(incomplete_children) > 0
 
-
 def update_task_status(task_ids, status, note_text=None):
     """Update the status of task items"""
     updated_count = 0
@@ -924,12 +931,12 @@ def update_task_status(task_ids, status, note_text=None):
             """, (tid,)).fetchone()
         
         # Update todo status
-        update_todo_status(tid, status)
+        update_item_status(tid, status)
         updated_count += 1
         
         # Add note to the completed task if provided
         if status == 'done' and note_text:
-            add_note([], note_text)
+            add_note([tid], note_text)
 
         # Handle recurring tasks: create a new task if this one has a recurrence pattern
         if status == 'done' and task_details:
@@ -968,14 +975,11 @@ def update_task_status(task_ids, status, note_text=None):
                                 "SELECT id, status, title, creation_date FROM items WHERE pid=?",
                                 (original_parent_id,)
                             ).fetchall()
-                        
+
+                        today = datetime.now().date().strftime("%Y-%m-%d")
                         for child_id, child_status, child_title, child_creation_date in children:  # In new schema, second column is status, not type
                             # Get the child's info from the same items table in new schema
-                            with sqlite3.connect(DB_FILE) as conn:
-                                item_info = conn.execute(
-                                    "SELECT status, due_date, completion_date, recur FROM items WHERE id=?",
-                                    (child_id,)
-                                ).fetchone()
+                            item_info = get_item_details(child_id)
                             
                             # Create the child under the new parent
                             if child_status == 'todo' or child_status in ['todo', 'doing', 'waiting', 'done']:
@@ -990,7 +994,7 @@ def update_task_status(task_ids, status, note_text=None):
                                         # Update status, due_date and recurrence pattern for the new child
                                         conn.execute(
                                             "UPDATE items SET status=?, due_date=?, recur=? WHERE id=?",
-                                            ('todo', due_date_val, recur_val, new_child_id)
+                                            ('todo', today, recur_val, new_child_id)
                                         )
                                 else:
                                     # Default values
@@ -1018,17 +1022,11 @@ def update_task_status(task_ids, status, note_text=None):
         else:
             print(f"Updated {updated_count} tasks to {status_display}")
 
-def update_todo_status(item_id, status):
+def update_item_status(item_id, status):
     """Update the status of a todo item"""
     today = datetime.now().date().strftime("%Y-%m-%d")
     with sqlite3.connect(DB_FILE) as conn:
-        # Check if the item exists
-        existing = conn.execute(
-            "SELECT id FROM items WHERE id=?",
-            (item_id,)
-        ).fetchone()
-        
-        if existing:
+        if item_exists(item_id):
             # Update the existing record - update status and possibly completion_date
             if status == 'done':
                 conn.execute(
@@ -1082,56 +1080,20 @@ def set_task_recur(task_ids, recur_pattern):
             )
     return True
 
-def edit_task(task_id, new_title):
-    """Edit the title of a task"""
+def edit_item(item_id, new_text):
     with sqlite3.connect(DB_FILE) as conn:
         # Check if item exists
-        cursor = conn.execute("SELECT id FROM items WHERE id=? AND status IN ('todo', 'doing', 'waiting', 'done')", (task_id,))
-        if not cursor.fetchone():
-            print(f"Error: Task with ID {task_id} not found")
-            return False
-
-        # Update the item title
-        conn.execute(
-            "UPDATE items SET title=? WHERE id=?",
-            (new_title, task_id)
-        )
-        print(f"Updated task {task_id} title to: {new_title}")
-        return True
-
-def edit_note(note_id, new_text):
-    """Edit the text of a note"""
-    with sqlite3.connect(DB_FILE) as conn:
-        # Check if item exists
-        cursor = conn.execute("SELECT id FROM items WHERE id=? AND status='note'", (note_id,))
-        if not cursor.fetchone():
-            print(f"Error: Note with ID {note_id} not found")
+        if not item_exists(item_id):
+            print(f"Error: Item with ID {item_id} not found")
             return False
 
         # Update the item text (stored in title field)
         conn.execute(
             "UPDATE items SET title=? WHERE id=?",
-            (new_text, note_id)
+            (new_text, item_id)
         )
-        print(f"Updated note {note_id} text to: {new_text}")
+        print(f"Updated item {item_id} text to: {new_text}")
         return True
-
-
-def add_task_under_note(note_id, text):
-    """Add a task under a specific note"""
-    # Verify the note exists
-    with sqlite3.connect(DB_FILE) as conn:
-        note = conn.execute("SELECT id FROM items WHERE id=? AND status='note'", (note_id,)).fetchone()
-        if not note:
-            print(f"Error: Note with ID {note_id} does not exist")
-            return False
-
-    # Add the task with parent_id
-    today = datetime.now().date().strftime("%Y-%m-%d")
-    item_id = add_item_with_details(text, "todo", today, note_id)
-    print(f"Added task with id {item_id} to note {note_id}")
-    return item_id
-
 
 def delete_item(item_ids):
     """Delete items (both notes and todos) from the database"""
@@ -1212,9 +1174,6 @@ def clear_all():
         print(f"Successfully deleted {total_items} data points. Database is now empty.")
     else:
         print("Operation cancelled. No data was deleted.")
-
-
-
 
 def show_journal():
     with sqlite3.connect(DB_FILE) as conn:
@@ -1397,71 +1356,31 @@ def show_due():
                     is_root=True,
                     show_due_date=False
                 )
+
 def show_task():
-    with sqlite3.connect(DB_FILE) as conn:
-        # Get only incomplete root tasks (items that have no parent OR have a note as parent and are not done)
-        # A root task is defined as: a task which does not have any parent or which does not have a task as parent
-        # So we want tasks where pid IS NULL OR where the parent item has status 'note'
-        root_items = conn.execute("""
-            SELECT *
-            FROM items
-            WHERE status IN ('todo', 'doing', 'waiting') 
-              AND (pid IS NULL OR pid IN (SELECT id FROM items WHERE status = 'note'))
-            ORDER BY creation_date ASC
-        """).fetchall()
-
-        # Group root items by creation_date
-        grouped = defaultdict(list)
-        for item in root_items:
-            creation_date = item[3]  # item[3] is creation_date
-            grouped[creation_date].append(item)
-
-    for day in sorted(grouped.keys()):
-        print()
-        print(format_date_with_day(day))
-
-        # For each root item of this day, get its complete hierarchy and print it
-        day_root_items = grouped[day]
-        for i, root_item in enumerate(day_root_items):
-            is_last = (i == len(day_root_items) - 1)
-
-            # Get the complete tree under this root item (including completed children)
-            with sqlite3.connect(DB_FILE) as temp_conn:
-                all_descendants = temp_conn.execute("""
-                    WITH RECURSIVE item_tree AS (
-                        -- Base case: the root item itself
-                        SELECT id, status, title, creation_date, pid, completion_date
-                        FROM items
-                        WHERE id = ?
-
-                        UNION ALL
-                        -- Recursive case: all child items
-                        SELECT i.id, i.status, i.title, i.creation_date, i.pid, i.completion_date
-                        FROM items i
-                        JOIN item_tree it ON i.pid = it.id
-                    )
-                    SELECT id, status, title, creation_date, pid, completion_date
-                    FROM item_tree
-                    ORDER BY id
-                """, (root_item[0],)).fetchall()  # root_item[0] is id
-
-            # Build the tree structure including all items (done and not done)
-            root_nodes, children, item_dict = build_item_tree(all_descendants)
-
-            # Print each root node in this hierarchy (should just be the main root we started with)
-            for j, item_node in enumerate(root_nodes):
-                item_is_last = (j == len(root_nodes) - 1) and is_last
-                print_item_tree(item_node, children, item_dict, item_is_last, "\t", True)
+    show_items('todo')
 
 def show_note():
+    show_items('note')
+
+def show_items(item_type):
     with sqlite3.connect(DB_FILE) as conn:
         # Get only root note items (notes that have no parent) for the note view
-        root_items = conn.execute("""
-            SELECT *
-            FROM items
-            WHERE pid IS NULL AND status = 'note'
-            ORDER BY creation_date ASC, id ASC
-        """).fetchall()
+        if item_type == 'note':
+            root_items = conn.execute("""
+                SELECT *
+                FROM items
+                WHERE pid IS NULL AND status = 'note'
+                ORDER BY creation_date ASC, id ASC
+            """).fetchall()
+        elif item_type == 'todo':
+            root_items = conn.execute("""
+                SELECT *
+                FROM items
+                WHERE status IN ('todo', 'doing', 'waiting') 
+                  AND (pid IS NULL OR pid IN (SELECT id FROM items WHERE status = 'note'))
+                ORDER BY creation_date ASC, id ASC
+            """).fetchall()
 
         # Group root items by creation_date
         grouped = defaultdict(list)
@@ -1483,17 +1402,17 @@ def show_note():
                 all_descendants = temp_conn.execute("""
                     WITH RECURSIVE item_tree AS (
                         -- Base case: the root item itself
-                        SELECT id, status, title, creation_date, pid
+                        SELECT id, status, title, creation_date, pid, completion_date
                         FROM items
                         WHERE id = ?
 
                         UNION ALL
                         -- Recursive case: all child items
-                        SELECT i.id, i.status, i.title, i.creation_date, i.pid
+                        SELECT i.id, i.status, i.title, i.creation_date, i.pid, i.completion_date
                         FROM items i
                         JOIN item_tree it ON i.pid = it.id
                     )
-                    SELECT id, status, title, creation_date, pid
+                    SELECT id, status, title, creation_date, pid, completion_date
                     FROM item_tree
                     ORDER BY id ASC
                 """, (root_item[0],)).fetchall()  # root_item[0] is id
@@ -1505,271 +1424,6 @@ def show_note():
             for j, item_node in enumerate(root_nodes):
                 item_is_last = (j == len(root_nodes) - 1) and is_last
                 print_item_tree(item_node, children, item_dict, item_is_last, "\t", True)
-
-def print_item_children(conn, parent_item_id, indent):
-    """Helper function to recursively print child items of an item"""
-    # Get child items of this item
-    # Get child items of this item - in NEW SCHEMA: id, status, title, creation_date, pid (instead of type)
-    child_items = conn.execute("""
-        SELECT id, status, title, creation_date, pid
-        FROM items
-        WHERE pid = ?
-        ORDER BY creation_date ASC, id ASC
-    """, (parent_item_id,)).fetchall()
-
-    # Print child items with current indentation
-    for child_item in child_items:
-        item_id, item_status, title, creation_date, pid = child_item
-        if item_status == 'note':
-            print(Fore.YELLOW + f"{indent}> {title}, #{item_id}, {creation_date}" + Style.RESET_ALL)
-
-            # Recursively print children of this child item (grandchildren, etc.)
-            print_item_children(conn, item_id, indent + "\t")
-        elif item_status in ['todo', 'doing', 'waiting', 'done']:  # For todo items in new schema
-            # For child todos - get info from the same items table in new schema
-            with sqlite3.connect(DB_FILE) as temp_conn:
-                item_info = temp_conn.execute(
-                    "SELECT status, due_date, completion_date, recur FROM items WHERE id=?",
-                    (item_id,)
-                ).fetchone()
-                
-            if item_info:
-                status, due_date, completion_date, recur = item_info
-            else:
-                # Default values
-                status, due_date, completion_date, recur = 'todo', creation_date, None, None
-                
-            checkbox = "[x]" if status == "done" else "[ ]"
-
-            # Color based on status
-            if status == "doing":
-                task_text = Back.YELLOW + Fore.BLACK + f"{checkbox} {title}, #{item_id}" + Style.RESET_ALL
-            elif status == "waiting":
-                task_text = Back.LIGHTBLACK_EX + Fore.WHITE + f"{checkbox} {title}, #{item_id}" + Style.RESET_ALL
-            elif status == "done":
-                task_text = Fore.GREEN + f"{checkbox} {title}, #{item_id}" + Style.RESET_ALL
-            else:  # todo
-                task_text = f"{checkbox} {title}, #{item_id}"
-
-            # Show recur pattern if it exists
-            if recur:
-                task_text += f", +{recur}"
-
-            # Show completion date for completed tasks
-            if status == "done" and completion_date:
-                task_text += f", completed: {format_date_with_day(completion_date)}"
-            # Show due date for non-completed tasks
-            elif status != "done":
-                due = datetime.strptime(due_date, "%Y-%m-%d").date()
-                today = datetime.now().date()
-                if due < today:
-                    task_text += Fore.RED + f", {format_date_with_day(due_date)}"
-                elif due == today:
-                    task_text += Fore.CYAN + f", {format_date_with_day(due_date)}"
-                else:
-                    task_text += f", {format_date_with_day(due_date)}"
-
-            print(Fore.YELLOW + f"{indent}{task_text}" + Style.RESET_ALL)
-
-def show_note_details(note_id):
-    """Show details of a specific note, including child items and linked items"""
-    with sqlite3.connect(DB_FILE) as conn:
-        # Get the specific item - in new schema: id, status, title, creation_date, pid
-        item = conn.execute("""
-            SELECT id, status, title, creation_date, pid
-            FROM items
-            WHERE id=?
-        """, (note_id,)).fetchone()
-
-        if not item:
-            print(f"Error: Item with ID {note_id} does not exist")
-            return
-
-        item_id, status, title, creation_date, pid = item
-
-        if status != 'note':
-            print(f"Error: Item with ID {note_id} is not a note")
-            return
-
-        # Print the note text in consistent format
-        print(Fore.YELLOW + f"- {title}, #{item_id}, {creation_date}" + Style.RESET_ALL)
-
-        # Get child items (items that have this note as parent) - in new schema: id, status, title, creation_date, pid
-        child_items = conn.execute("""
-            SELECT id, status, title, creation_date, pid
-            FROM items
-            WHERE pid = ?
-            ORDER BY creation_date ASC, id ASC
-        """, (note_id,)).fetchall()
-
-        # Print child items
-        has_children = len(child_items) > 0
-        if has_children:
-            for child_item in child_items:
-                child_item_id, child_status, child_title, child_creation_date, child_pid = child_item
-                if child_status == 'note':
-                    print(Fore.YELLOW + f"\t> {child_title}, {child_item_id}, {child_creation_date}" + Style.RESET_ALL)
-                    # Recursively display children of this child note (if any)
-                    show_child_item_details(conn, child_item_id, "\t\t")
-                elif child_status in ['todo', 'doing', 'waiting', 'done']:
-                    # For child todos - get info from the same items table in new schema
-                    with sqlite3.connect(DB_FILE) as temp_conn:
-                        item_info = temp_conn.execute(
-                            "SELECT status, due_date, completion_date, recur FROM items WHERE id=?",
-                            (child_item_id,)
-                        ).fetchone()
-                        
-                    if item_info:
-                        status, due_date, completion_date, recur = item_info
-                    else:
-                        # Default values
-                        status, due_date, completion_date, recur = 'todo', child_creation_date, None, None
-                        
-                    checkbox = "[x]" if status == "done" else "[ ]"
-
-                    # Color based on status
-                    if status == "doing":
-                        task_text = Back.YELLOW + Fore.BLACK + f"{checkbox} {child_title}, {child_item_id}" + Style.RESET_ALL
-                    elif status == "waiting":
-                        task_text = Back.LIGHTBLACK_EX + Fore.WHITE + f"{child_title}, #{child_item_id}" + Style.RESET_ALL
-                    elif status == "done":
-                        task_text = Fore.GREEN + f"{child_title}, #{child_item_id}" + Style.RESET_ALL
-                    else:  # todo
-                        task_text = f"{checkbox} {child_title}, #{child_item_id}"
-
-                    # Show recur pattern if it exists
-                    if recur:
-                        task_text += f", +{recur}"
-
-                    # Show due date
-                    due = datetime.strptime(due_date, "%Y-%m-%d").date()
-                    today = datetime.now().date()
-                    if status != "done":
-                        if due < today:
-                            task_text += Fore.RED + f", {format_date_with_day(due_date)}"
-                        elif due == today:
-                            task_text += Fore.CYAN + f", {format_date_with_day(due_date)}"
-                        else:
-                            task_text += f", {format_date_with_day(due_date)}"
-
-                    print(Fore.YELLOW + f"\t{task_text}" + Style.RESET_ALL)
-
-        # Print child items in consistent format
-        has_children = len(child_items) > 0
-        if has_children:
-            for child_item in child_items:
-                child_item_id, child_item_type, child_title, child_creation_date, child_pid = child_item
-                if child_item_type == 'note':
-                    print(Fore.YELLOW + f"\t> {child_title}, {child_item_id}, {child_creation_date}" + Style.RESET_ALL)
-                    # Recursively display children of this child note (if any)
-                    show_child_item_details(conn, child_item_id, "\t\t")
-                elif child_item_type == 'todo':
-                    # For child todos - get info from the same items table in new schema
-                    with sqlite3.connect(DB_FILE) as temp_conn:
-                        item_info = temp_conn.execute(
-                            "SELECT status, due_date, completion_date, recur FROM items WHERE id=?",
-                            (child_item_id,)
-                        ).fetchone()
-                        
-                    if item_info:
-                        status, due_date, completion_date, recur = item_info
-                    else:
-                        # Default values
-                        status, due_date, completion_date, recur = 'todo', child_creation_date, None, None
-
-                    checkbox = "[x]" if status == "done" else "[ ]"
-
-                    # Color based on status
-                    if status == "doing":
-                        task_text = Back.YELLOW + Fore.BLACK + f"{checkbox} {child_title}, #{child_item_id}" + Style.RESET_ALL
-                    elif status == "waiting":
-                        task_text = Back.LIGHTBLACK_EX + Fore.WHITE + f"{child_title}, #{child_item_id}" + Style.RESET_ALL
-                    elif status == "done":
-                        task_text = Fore.GREEN + f"{child_title}, #{child_item_id}" + Style.RESET_ALL
-                    else:  # todo
-                        task_text = f"{checkbox} {child_title}, #{child_item_id}"
-
-                    # Show recur pattern if it exists
-                    if recur:
-                        task_text += f", +{recur}"
-
-                    # Show due date
-                    due = datetime.strptime(due_date, "%Y-%m-%d").date()
-                    today = datetime.now().date()
-                    if status != "done":
-                        if due < today:
-                            task_text += Fore.RED + f", {format_date_with_day(due_date)}"
-                        elif due == today:
-                            task_text += Fore.CYAN + f", {format_date_with_day(due_date)}"
-                        else:
-                            task_text += f", {format_date_with_day(due_date)}"
-
-                    print(Fore.YELLOW + f"\t{task_text}" + Style.RESET_ALL)
-
-        if not has_children:
-            print(Fore.CYAN + f"\nNo linked items found." + Style.RESET_ALL)
-
-def show_child_item_details(conn, item_id, indent_prefix):
-    """Helper function to recursively display child items of an item"""
-    # Get child items of this item - in new schema: id, status, title, creation_date, pid
-    child_items = conn.execute("""
-        SELECT id, status, title, creation_date, pid
-        FROM items
-        WHERE pid = ?
-        ORDER BY creation_date ASC, id ASC
-    """, (item_id,)).fetchall()
-
-    # Print child items with additional indentation
-    for child_item in child_items:
-        item_id, item_status, child_title, child_creation_date, child_pid = child_item
-        if item_status == 'note':
-            print(Fore.YELLOW + f"{indent_prefix}> {child_title}, #{item_id}, {child_creation_date}" + Style.RESET_ALL)
-
-            # Recursively display children of this child item (if any)
-            show_child_item_details(conn, item_id, indent_prefix + "\t")
-        elif item_status in ['todo', 'doing', 'waiting', 'done']:  # For todo items in new schema
-            # For child todos - get info from the same items table in new schema
-            with sqlite3.connect(DB_FILE) as temp_conn:
-                item_info = temp_conn.execute(
-                    "SELECT status, due_date, completion_date, recur FROM items WHERE id=?",
-                    (item_id,)
-                ).fetchone()
-                
-            if item_info:
-                status, due_date, completion_date, recur = item_info
-            else:
-                # Default values
-                status, due_date, completion_date, recur = 'todo', child_creation_date, None, None
-                
-            checkbox = "[x]" if status == "done" else "[ ]"
-
-            # Color based on status
-            if status == "doing":
-                task_text = Back.YELLOW + Fore.BLACK + f"{checkbox} {child_title}, #{item_id}" + Style.RESET_ALL
-            elif status == "waiting":
-                task_text = Back.LIGHTBLACK_EX + Fore.WHITE + f"{child_title}, #{item_id}" + Style.RESET_ALL
-            elif status == "done":
-                task_text = Fore.GREEN + f"{child_title}, #{item_id}" + Style.RESET_ALL
-            else:  # todo
-                task_text = f"{checkbox} {child_title}, #{item_id}"
-
-            # Show recur pattern if it exists
-            if recur:
-                task_text += f", +{recur}"
-
-            # Show due date only if it exists
-            if due_date:  # Only show due date if it exists
-                due = datetime.strptime(due_date, "%Y-%m-%d").date()
-                today = datetime.now().date()
-                if status != "done":
-                    if due < today:
-                        task_text += Fore.RED + f", {format_date_with_day(due_date)}"
-                    elif due == today:
-                        task_text += Fore.CYAN + f", {format_date_with_day(due_date)}"
-                    else:
-                        task_text += f", {format_date_with_day(due_date)}"
-
-            print(Fore.YELLOW + f"{indent_prefix}{task_text}" + Style.RESET_ALL)
 
 def add_item_with_details(title, item_type, due_date=None, parent_id=None):
     """Add an item with specific details
@@ -1783,6 +1437,11 @@ def add_item_with_details(title, item_type, due_date=None, parent_id=None):
     Returns:
         int: The ID of the newly created item
     """
+    # Verify the parent note exists
+    if parent_id and not item_exists(parent_id):
+        print(f"Error: Parent note with ID {parent_id} does not exist")
+        return False
+
     today = datetime.now().date().strftime("%Y-%m-%d")
     if not due_date:
         due_date = today
@@ -1855,14 +1514,7 @@ def show_item_details(item_id):
         # Print the requested item with its entire subtree
         print_item_tree(requested_item, children, item_dict, is_last=True, prefix="", is_root=True)
 
-        print(Fore.CYAN + f"\nNo linked items found." + Style.RESET_ALL)
-
-
-def add_item_with_parent(title, item_type, parent_id):
-    """Add an item with a parent"""
-    return add_item(title, item_type, parent_id)
-
-def search_tasks_and_notes(search_text):
+def search_items(search_text):
     """Search for tasks and notes containing the search text (supports wildcards: * and ?)"""
     # Convert user-friendly wildcards to SQL LIKE patterns
     # * -> % (matches any sequence of characters)
@@ -1897,12 +1549,6 @@ def display_search_results(grouped):
     if not has_results:
         print("No matching tasks or notes found.")
         return
-
-    # Get all items to properly display them
-    with sqlite3.connect(DB_FILE) as conn:
-        all_items = conn.execute(
-            "SELECT id, type, title, creation_date, pid FROM items ORDER BY creation_date ASC,id ASC"
-        ).fetchall()
 
     for day in sorted(grouped.keys()):
         items_for_day = grouped[day]["items"]
@@ -2016,6 +1662,29 @@ def show_tasks_by_status():
                     item_is_last = (j == len(all_root_nodes) - 1) and is_last
                     print_item_tree(item_node, all_children, all_item_dict, item_is_last, "\t", is_root=True)
 
+def set_task_due_date(item_id, new_due_str):
+    with sqlite3.connect(DB_FILE) as conn:
+        conn.execute(
+            "UPDATE items SET due_date=? WHERE id=?",
+            (new_due_str.strftime("%Y-%m-%d"), item_id)
+        )
+        print(f"Updated due date for item {item_id} to {new_due_str.strftime('%Y-%m-%d')}")
+
+def set_item_parent(item_id, new_parent_id):
+    with sqlite3.connect(DB_FILE) as conn:
+        # Check if new parent exists
+        if new_parent_id is not None and not item_exists(new_parent_id):
+            print(f"Error: Parent item with ID {new_parent_id} does not exist")
+            return False
+
+        # Update the parent ID
+        conn.execute(
+            "UPDATE items SET pid=? WHERE id=?",
+            (new_parent_id, item_id)
+        )
+        print(f"Updated parent of item {item_id} to {new_parent_id}")
+        return True
+
 # --- CLI Parser ---
 
 def main():
@@ -2072,8 +1741,6 @@ def main():
         new_text = None
         new_due = None
         recur_pattern = None
-        link_ids = []
-        unlink_ids = []
         new_parent_id = None  # For changing parent
         
         i = 0
@@ -2087,7 +1754,6 @@ def main():
             elif options[i] == "-recur" and i + 1 < len(options):
                 recur_pattern = options[i + 1]
                 i += 2
-
             elif options[i] == "-parent" and i + 1 < len(options):
                 # Parse parent ID or 'none'
                 parent_value = options[i + 1]
@@ -2097,8 +1763,8 @@ def main():
                     new_parent_id = int(parent_value)
                 i += 2
             else:
-                # Skip unknown option
-                i += 1
+                print(f"Error: Unknown or incomplete option '{options[i]}' in edit command")
+                return
         
         # Get the item status to determine what operations are valid - in new schema, this is stored in the status column
         with sqlite3.connect(DB_FILE) as conn:
@@ -2117,19 +1783,10 @@ def main():
         
         # Perform operations
         if new_text:
-            if item_status == 'note':  # For notes
-                edit_note(item_id, new_text)
-            else:  # For tasks
-                edit_task(item_id, new_text)
+            edit_item(item_id, new_text)
         
         if new_due and item_status != 'note':
-            # In the new schema, update the due_date field directly in the items table
-            with sqlite3.connect(DB_FILE) as conn:
-                conn.execute(
-                    "UPDATE items SET due_date=? WHERE id=?",
-                    (new_due.strftime("%Y-%m-%d"), item_id)
-                )
-                print(f"Updated due date for {item_status} {item_id} to {new_due.strftime('%Y-%m-%d')}")
+            set_task_due_date(item_id, new_due)
         
         if recur_pattern and item_status != 'note':
             # Validate and set recur pattern
@@ -2137,163 +1794,126 @@ def main():
                 print(f"Set recur pattern '{recur_pattern}' for task {item_id}")
         
         if new_parent_id is not None:
-            # Update the parent ID (pid) for the item
-            with sqlite3.connect(DB_FILE) as conn:
-                # Check if the new parent exists (if not None)
-                if new_parent_id is not None:
-                    parent_exists = conn.execute(
-                        "SELECT id FROM items WHERE id=?", (new_parent_id,)
-                    ).fetchone()
-                    if not parent_exists:
-                        print(f"Error: Parent item with ID {new_parent_id} does not exist")
-                        return
-                
-                # Update the parent ID
-                conn.execute(
-                    "UPDATE items SET pid=? WHERE id=?", (new_parent_id, item_id)
-                )
-                parent_display = new_parent_id if new_parent_id is not None else "none"
-                print(f"Updated parent for item {item_id} to {parent_display}")
-        
+            set_item_parent(item_id, new_parent_id)
 
     elif cmd in ["task", "note"]:  # Handle new consolidated commands
-        # Check if the first argument is a numeric ID (for editing/showing)
-        if rest and len(rest) >= 1 and rest[0].isdigit():
-            # Handle "j note <id> [options...]" or "j task <id> [options...]" (edit/show commands)
-            item_type = cmd  # "note" or "task"
-            item_id = int(rest[0])
-            options = rest[1:] if len(rest) > 1 else []  # Remaining args are options
+        # Handle "j note <text> [-link <id>[,<id>,...]]" or "j task [@<pid>] <text> [-due XX] [-recur XX]" (add new commands)
+        sub_cmd = cmd  # "note" or "task"
+        cmd_args = rest
 
-            if item_type == "note":
-                # Parse options for note editing (no more showing, removing -task option)
-                # Note editing functionality has been moved to 'j edit <id>' command
-                print(f"The 'j note {item_id}' command for editing is deprecated. Use 'j edit {item_id}' instead.")
-            elif item_type == "task":
-                # Parse options for task editing (no more showing, removing -note option)
-                # Task editing functionality has been moved to 'j edit <id>' command
-                print(f"The 'j task {item_id}' command for editing is deprecated. Use 'j edit {item_id}' instead.")
-        else:
-            # Handle "j note <text> [-link <id>[,<id>,...]]" or "j task [@<pid>] <text> [-due XX] [-recur XX]" (add new commands)
-            sub_cmd = cmd  # "note" or "task"
-            cmd_args = rest
+        if sub_cmd == "note":  # Handle "j note <text> [-link <id>[,<id>,...]]" (add new note)
+            # Check if the first argument is a parent note ID in the format @<number>
+            parent_note_id = None
+            start_idx = 0
 
-            if sub_cmd == "note":  # Handle "j note <text> [-link <id>[,<id>,...]]" (add new note)
-                # Check if the first argument is a parent note ID in the format @<number>
-                parent_note_id = None
-                start_idx = 0
+            if cmd_args and cmd_args[0].startswith("@") and cmd_args[0][1:].isdigit():
+                parent_note_id = int(cmd_args[0][1:])  # Remove @ and convert to int
+                start_idx = 1  # Skip the first argument as it's the parent ID
 
-                if cmd_args and cmd_args[0].startswith("@") and cmd_args[0][1:].isdigit():
-                    parent_note_id = int(cmd_args[0][1:])  # Remove @ and convert to int
-                    start_idx = 1  # Skip the first argument as it's the parent ID
-
-                # Find the note text (everything before the first option flag)
-                note_text = []
-                link_ids = []
-                i = start_idx
-                while i < len(cmd_args):
-                    if cmd_args[i].startswith("-"):
-                        # Unknown option - skip it
-                        i += 1
-                    else:
-                        note_text.append(cmd_args[i])
-                        i += 1
-
-                if not note_text:
-                    print("Error: Please provide note text")
-                    return
-
-                text = " ".join(note_text)
-                if text:
-                    # Check if parent_note_id exists if provided
-                    if parent_note_id is not None:
-                        with sqlite3.connect(DB_FILE) as conn:
-                            cursor = conn.execute("SELECT id FROM items WHERE id = ?", (parent_note_id,))
-                            if not cursor.fetchone():
-                                print(f"Error: Parent item with ID {parent_note_id} does not exist")
-                                return
-
-                    # Add the note with parent if specified
-                    note_ids = add_note([], text, parent_note_id)
-
-
+            # Find the note text (everything before the first option flag)
+            note_text = []
+            link_ids = []
+            i = start_idx
+            while i < len(cmd_args):
+                if cmd_args[i].startswith("-"):
+                    # Unknown option - skip it
+                    i += 1
                 else:
-                    print("Error: Please provide note text")
-            elif sub_cmd == "task":
-                # Check if the first argument is a parent item ID in the format @<number>
-                parent_id = None
-                start_idx = 0
+                    note_text.append(cmd_args[i])
+                    i += 1
 
-                if cmd_args and cmd_args[0].startswith("@") and cmd_args[0][1:].isdigit():
-                    parent_id = int(cmd_args[0][1:])  # Remove @ and convert to int
-                    start_idx = 1  # Skip the first argument as it's the parent ID
+            if not note_text:
+                print("Error: Please provide note text")
+                return
 
-                # Find the task text (everything before the first option flag)
-                task_text = []
-                due_date = None
-                recur_pattern = None
-                i = start_idx
-                while i < len(cmd_args):
-                    if cmd_args[i].startswith("-"):
-                        if cmd_args[i] == "-due" and i + 1 < len(cmd_args):
-                            due_kw = cmd_args[i + 1]
-                            # Remove @ symbol if present (for due dates like @tomorrow, @2025-12-25)
-                            if due_kw.startswith("@"):
-                                due_kw = due_kw[1:]
-                            due_date = parse_due(due_kw)
-                            i += 2
-                        elif cmd_args[i] == "-recur" and i + 1 < len(cmd_args):
-                            recur_pattern = cmd_args[i + 1]
-                            # Validate the recurrence pattern
-                            if not set_task_recur([0], recur_pattern):  # Use 0 as placeholder, we'll update later
-                                print("Error: Invalid recurrence pattern. Use format: <number><unit> (e.g., 4w, 2d, 1m, 1y)")
-                                return
-                            i += 2
-                        else:
-                            # Unknown option
-                            i += 1
+            text = " ".join(note_text)
+            if text:
+                # Check if parent_note_id exists if provided
+                if parent_note_id is not None:
+                    with sqlite3.connect(DB_FILE) as conn:
+                        cursor = conn.execute("SELECT id FROM items WHERE id = ?", (parent_note_id,))
+                        if not cursor.fetchone():
+                            print(f"Error: Parent item with ID {parent_note_id} does not exist")
+                            return
+
+                # Add the note with parent if specified
+                note_ids = add_note([], text, parent_note_id)
+            else:
+                print("Error: Please provide note text")
+        elif sub_cmd == "task":
+            # Check if the first argument is a parent item ID in the format @<number>
+            parent_id = None
+            start_idx = 0
+
+            if cmd_args and cmd_args[0].startswith("@") and cmd_args[0][1:].isdigit():
+                parent_id = int(cmd_args[0][1:])  # Remove @ and convert to int
+                start_idx = 1  # Skip the first argument as it's the parent ID
+
+            # Find the task text (everything before the first option flag)
+            task_text = []
+            due_date = None
+            recur_pattern = None
+            i = start_idx
+            while i < len(cmd_args):
+                if cmd_args[i].startswith("-"):
+                    if cmd_args[i] == "-due" and i + 1 < len(cmd_args):
+                        due_kw = cmd_args[i + 1]
+                        # Remove @ symbol if present (for due dates like @tomorrow, @2025-12-25)
+                        if due_kw.startswith("@"):
+                            due_kw = due_kw[1:]
+                        due_date = parse_due(due_kw)
+                        i += 2
+                    elif cmd_args[i] == "-recur" and i + 1 < len(cmd_args):
+                        recur_pattern = cmd_args[i + 1]
+                        # Validate the recurrence pattern
+                        if not set_task_recur([0], recur_pattern):  # Use 0 as placeholder, we'll update later
+                            print("Error: Invalid recurrence pattern. Use format: <number><unit> (e.g., 4w, 2d, 1m, 1y)")
+                            return
+                        i += 2
                     else:
-                        task_text.append(cmd_args[i])
+                        # Unknown option
                         i += 1
+                else:
+                    task_text.append(cmd_args[i])
+                    i += 1
 
-                if not task_text:
-                    print("Error: Please provide task text")
-                    return
+            if not task_text:
+                print("Error: Please provide task text")
+                return
 
-                text = " ".join(task_text)
-                if text:
-                    # Check if parent_id exists if provided
-                    if parent_id is not None:
-                        with sqlite3.connect(DB_FILE) as conn:
-                            cursor = conn.execute("SELECT id FROM items WHERE id = ?", (parent_id,))
-                            if not cursor.fetchone():
-                                print(f"Error: Parent item with ID {parent_id} does not exist")
-                                return
+            text = " ".join(task_text)
+            if text:
+                # Check if parent_id exists if provided
+                if parent_id is not None:
+                    if not item_exists(parent_id):
+                        print(f"Error: Parent item with ID {parent_id} does not exist")
+                        return
 
-                    # For child tasks, recurrence should be ignored
-                    if parent_id is not None and recur_pattern is not None:
-                        print(f"Warning: Recurrence pattern '{recur_pattern}' is ignored for child tasks")
-                        recur_pattern = None  # Don't allow recurrence for child tasks
+                # For child tasks, recurrence should be ignored
+                if parent_id is not None and recur_pattern is not None:
+                    print(f"Warning: Recurrence pattern '{recur_pattern}' is ignored for child tasks")
+                    recur_pattern = None  # Don't allow recurrence for child tasks
 
-                    # Add the task with due date if specified
-                    if due_date:
-                        # Create a temporary task with due date
-                        today = datetime.now().date().strftime("%Y-%m-%d")
-                        item_id = add_item_with_details(text, "todo", due_date.strftime("%Y-%m-%d"), parent_id)
+                # Add the task with due date if specified
+                if due_date:
+                    # Create a temporary task with due date
+                    today = datetime.now().date().strftime("%Y-%m-%d")
+                    item_id = add_item_with_details(text, "todo", due_date.strftime("%Y-%m-%d"), parent_id)
+                    print(f"Added task with id {item_id}")
+                else:
+                    # Add task without due date (default to today)
+                    if recur_pattern:  # Need to call add_item with proper due date handling
+                        # Use today as default due date when recurrence is specified but due date isn't
+                        today = datetime.now().date()
+                        formatted_today = today.strftime("%Y-%m-%d")
+                        item_id = add_item_with_details(text, "todo", formatted_today, parent_id)
                         print(f"Added task with id {item_id}")
                     else:
-                        # Add task without due date (default to today)
-                        if recur_pattern:  # Need to call add_item with proper due date handling
-                            # Use today as default due date when recurrence is specified but due date isn't
-                            today = datetime.now().date()
-                            formatted_today = today.strftime("%Y-%m-%d")
-                            item_id = add_item_with_details(text, "todo", formatted_today, parent_id)
-                            print(f"Added task with id {item_id}")
-                        else:
-                            # Call original add_task function for simple tasks but with parent ID
-                            item_id = add_item(text, "todo", parent_id)
-                            print(f"Added task with id {item_id}")
-                else:
-                    print("Error: Please provide task text")
+                        # Call original add_task function for simple tasks but with parent ID
+                        item_id = add_item(text, "todo", parent_id)
+                        print(f"Added task with id {item_id}")
+            else:
+                print("Error: Please provide task text")
     elif cmd in ["start", "restart", "waiting", "done"] and len(rest) >= 1:
         # New consolidated command: j <start|restart|waiting|done> <id>[,<id>,...]
         ids_str = rest[0]
@@ -2324,28 +1944,18 @@ def main():
                 return
 
             # Group IDs by type to make deletion more efficient and count items
-            note_ids = []
-            task_ids = []
+            item_ids = []
             invalid_ids = []
             
-            with sqlite3.connect(DB_FILE) as conn:
-                for item_id in ids:
-                    item = conn.execute("SELECT type FROM items WHERE id=?", (item_id,)).fetchone()
-                    if item:
-                        item_type = item[0]
-                        if item_type == 'note':
-                            note_ids.append(item_id)
-                        elif item_type == 'todo':
-                            task_ids.append(item_id)
-                        else:
-                            print(f"Error: Unknown item type for ID {item_id}")
-                            invalid_ids.append(item_id)
-                    else:
-                        print(f"Error: Item with ID {item_id} does not exist")
-                        invalid_ids.append(item_id)
+            for item_id in ids:
+                if item_exists(item_id):
+                    item_ids.append(item_id)
+                else:
+                    print(f"Error: Item with ID {item_id} does not exist")
+                    invalid_ids.append(item_id)
 
             # Determine total count of items to be deleted
-            total_items = len(note_ids) + len(task_ids)
+            total_items = len(item_ids)
             
             if total_items == 0:
                 print("No valid items to delete.")
@@ -2360,12 +1970,8 @@ def main():
                 return
 
             # Use the unified delete_item function with all valid IDs
-            delete_item(ids)
-    elif cmd in ["task"]:
-        show_task()
-    elif cmd in ["note"]:
-        show_note()
-    elif cmd in ["list", "ls"] and len(rest) >= 1:
+            delete_item(item_ids)
+    elif cmd in ["list"] and len(rest) >= 1:
         # New consolidated command: j list/ls <page|note|task> <optional: due|status|done>
         if rest[0] == "page":
             show_journal()
@@ -2384,11 +1990,11 @@ def main():
             else:
                 print("Error: Invalid task list option. Use 'due', 'status', or 'done'")
         else:
-            print("Error: Invalid syntax. Use 'j ls <page|note|task>' or 'j ls task <due|status|done>'")
+            print("Error: Invalid syntax. Use 'j list <page|note|task>' or 'j list task <due|status|done>'")
     elif cmd == "search":
         if rest:
             search_text = " ".join(rest)
-            grouped, items = search_tasks_and_notes(search_text)
+            grouped, items = search_items(search_text)
             display_search_results(grouped)
         else:
             print("Error: Please provide search text")
@@ -2408,11 +2014,9 @@ def main():
             
             # Check if parent exists if parent_id is provided
             if parent_id is not None:
-                with sqlite3.connect(DB_FILE) as conn:
-                    parent_exists = conn.execute("SELECT id FROM items WHERE id=?", (parent_id,)).fetchone()
-                    if not parent_exists:
-                        print(f"Error: Parent item with ID {parent_id} does not exist")
-                        return
+                if not item_exists(parent_id):
+                    print(f"Error: Parent item with ID {parent_id} does not exist")
+                    return
             
             # Import from file
             imported_ids = import_from_file(file_path, parent_id)
@@ -2423,7 +2027,7 @@ def main():
                 print(f"No items imported from '{file_path}'")
         else:
             # No file path provided - use enhanced editor functionality
-            imported_ids = enhanced_import_with_editor(parent_id)
+            imported_ids = import_with_editor(parent_id)
     elif cmd == "export":
         # Check if an item ID is provided as the first argument
         if len(rest) >= 1 and rest[0].isdigit():
@@ -2445,7 +2049,7 @@ def main():
                     print(f"Failed to export item {item_id}")
             else:
                 # No file path provided - use enhanced editor functionality
-                success = enhanced_export_with_editor(item_id)
+                success = export_with_editor(item_id)
         else:
             # No item ID provided, export entire database
             # Check if a file path is provided as the first argument
@@ -2461,7 +2065,7 @@ def main():
                     print("Failed to export entire database")
             else:
                 # No file path provided - use enhanced editor functionality for entire database
-                success = enhanced_export_entire_database_with_editor()
+                success = export_entire_database_with_editor()
     elif cmd == "backup":
         if not rest:
             print("Error: Please specify a backup operation: create, ls, or restore <file>")

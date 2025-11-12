@@ -125,7 +125,7 @@ def test_consolidated_task_start():
     
     # Get the task IDs
     with sqlite3.connect(DB_FILE) as conn:
-        task_ids = [row[0] for row in conn.execute("SELECT id FROM items WHERE type='todo' ORDER BY id ASC").fetchall()]
+        task_ids = [row[0] for row in conn.execute("SELECT id FROM items WHERE status IN ('todo', 'doing', 'waiting', 'done') ORDER BY id ASC").fetchall()]
         assert len(task_ids) == 2
         task1_id, task2_id = task_ids
     
@@ -145,10 +145,9 @@ def test_consolidated_task_start():
         # Verify the status change in DB
         with sqlite3.connect(DB_FILE) as conn:
             tasks = conn.execute("""
-                SELECT t.status 
-                FROM todo_info t
-                JOIN items i ON t.item_id = i.id
-                WHERE i.id IN (?,?)
+                SELECT status 
+                FROM items
+                WHERE id IN (?,?)
             """, (task1_id, task2_id)).fetchall()
             for task in tasks:
                 assert task[0] == "doing"
@@ -163,7 +162,7 @@ def test_consolidated_task_restart():
     
     # Get the task IDs
     with sqlite3.connect(DB_FILE) as conn:
-        task_ids = [row[0] for row in conn.execute("SELECT id FROM items WHERE type='todo' ORDER BY id ASC").fetchall()]
+        task_ids = [row[0] for row in conn.execute("SELECT id FROM items WHERE status IN ('todo', 'doing', 'waiting', 'done') ORDER BY id ASC").fetchall()]
         assert len(task_ids) == 2
         task1_id, task2_id = task_ids
     
@@ -186,10 +185,9 @@ def test_consolidated_task_restart():
         # Verify the status change in DB
         with sqlite3.connect(DB_FILE) as conn:
             tasks = conn.execute("""
-                SELECT t.status 
-                FROM todo_info t
-                JOIN items i ON t.item_id = i.id
-                WHERE i.id IN (?,?)
+                SELECT status 
+                FROM items
+                WHERE id IN (?,?)
             """, (task1_id, task2_id)).fetchall()
             for task in tasks:
                 assert task[0] == "todo"
@@ -204,7 +202,7 @@ def test_consolidated_task_waiting():
     
     # Get the task IDs
     with sqlite3.connect(DB_FILE) as conn:
-        task_ids = [row[0] for row in conn.execute("SELECT id FROM items WHERE type='todo' ORDER BY id ASC").fetchall()]
+        task_ids = [row[0] for row in conn.execute("SELECT id FROM items WHERE status IN ('todo', 'doing', 'waiting', 'done') ORDER BY id ASC").fetchall()]
         assert len(task_ids) == 2
         task1_id, task2_id = task_ids
     
@@ -224,10 +222,9 @@ def test_consolidated_task_waiting():
         # Verify the status change in DB
         with sqlite3.connect(DB_FILE) as conn:
             tasks = conn.execute("""
-                SELECT t.status 
-                FROM todo_info t
-                JOIN items i ON t.item_id = i.id
-                WHERE i.id IN (?,?)
+                SELECT status 
+                FROM items
+                WHERE id IN (?,?)
             """, (task1_id, task2_id)).fetchall()
             for task in tasks:
                 assert task[0] == "waiting"
@@ -242,7 +239,7 @@ def test_consolidated_task_done_with_note():
     
     # Get the task IDs
     with sqlite3.connect(DB_FILE) as conn:
-        task_ids = [row[0] for row in conn.execute("SELECT id FROM items WHERE type='todo' ORDER BY id ASC").fetchall()]
+        task_ids = [row[0] for row in conn.execute("SELECT id FROM items WHERE status IN ('todo', 'doing', 'waiting', 'done') ORDER BY id ASC").fetchall()]
         assert len(task_ids) == 2
         task1_id, task2_id = task_ids
     
@@ -262,10 +259,9 @@ def test_consolidated_task_done_with_note():
         # Verify the status change in DB
         with sqlite3.connect(DB_FILE) as conn:
             tasks = conn.execute("""
-                SELECT t.status, t.completion_date
-                FROM todo_info t
-                JOIN items i ON t.item_id = i.id
-                WHERE i.id IN (?,?)
+                SELECT status, completion_date
+                FROM items
+                WHERE id IN (?,?)
             """, (task1_id, task2_id)).fetchall()
             for task in tasks:
                 assert task[0] == "done"
@@ -275,9 +271,9 @@ def test_consolidated_task_done_with_note():
         with sqlite3.connect(DB_FILE) as conn:
             # Count notes with the expected text
             notes = conn.execute("""
-                SELECT i.title
-                FROM items i
-                WHERE i.title = 'Completed successfully' AND i.type = 'note'
+                SELECT title
+                FROM items
+                WHERE title = 'Completed successfully' AND status = 'note'
             """).fetchall()
             assert len(notes) >= 2  # At least one note for each task
     finally:
@@ -291,7 +287,7 @@ def test_delete_task_still_works_with_rm():
     
     # Get the task IDs
     with sqlite3.connect(DB_FILE) as conn:
-        task_ids = [row[0] for row in conn.execute("SELECT id FROM items WHERE type='todo' ORDER BY id ASC").fetchall()]
+        task_ids = [row[0] for row in conn.execute("SELECT id FROM items WHERE status IN ('todo', 'doing', 'waiting', 'done') ORDER BY id ASC").fetchall()]
         assert len(task_ids) == 2
         task1_id, task2_id = task_ids
     
@@ -322,7 +318,7 @@ def test_consolidated_show_note():
     
     # Get the note ID
     with sqlite3.connect(DB_FILE) as conn:
-        note = conn.execute("SELECT id FROM items WHERE title='Test specific note' AND type='note'").fetchone()
+        note = conn.execute("SELECT id FROM items WHERE title='Test specific note' AND status='note'").fetchone()
         assert note is not None
         note_id = note[0]
     
@@ -348,7 +344,7 @@ def test_consolidated_show_task():
     
     # Get the task ID
     with sqlite3.connect(DB_FILE) as conn:
-        task = conn.execute("SELECT id FROM items WHERE title='Test specific task' AND type='todo'").fetchone()
+        task = conn.execute("SELECT id FROM items WHERE title='Test specific task' AND status='todo'").fetchone()
         assert task is not None
         task_id = task[0]
     
@@ -493,7 +489,7 @@ def test_delete_command_removed():
     
     # Get the task ID
     with sqlite3.connect(DB_FILE) as conn:
-        task = conn.execute("SELECT id FROM items WHERE title='Test task to delete' AND type='todo'").fetchone()
+        task = conn.execute("SELECT id FROM items WHERE title='Test task to delete' AND status='todo'").fetchone()
         assert task is not None
         task_id = task[0]
     
@@ -519,7 +515,7 @@ def test_old_rm_task_command_removed():
     
     # Get the task ID
     with sqlite3.connect(DB_FILE) as conn:
-        task = conn.execute("SELECT id FROM items WHERE title='Test task to delete' AND type='todo'").fetchone()
+        task = conn.execute("SELECT id FROM items WHERE title='Test task to delete' AND status='todo'").fetchone()
         assert task is not None
         task_id = task[0]
     
@@ -546,7 +542,7 @@ def test_note_id_command_shows_details():
     
     # Get the note ID
     with sqlite3.connect(DB_FILE) as conn:
-        note = conn.execute("SELECT id FROM items WHERE title='Test note to view' AND type='note'").fetchone()
+        note = conn.execute("SELECT id FROM items WHERE title='Test note to view' AND status='note'").fetchone()
         assert note is not None
         note_id = note[0]
     

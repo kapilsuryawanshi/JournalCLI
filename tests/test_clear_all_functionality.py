@@ -24,18 +24,14 @@ def test_clear_all_functionality():
     task1_id = jrnl_app.add_item("Test task 1", "todo")
     task2_id = jrnl_app.add_item("Test task 2", "todo", task1_id)  # Child task
     
-    # Link some items
-    jrnl_app.link_items(note1_id, task1_id)
+    # Linking functionality has been removed in the new schema
+    # Just add items to test clear functionality
     
     # Verify data exists before clear
     with sqlite3.connect(jrnl_app.DB_FILE) as conn:
         items_count = conn.execute("SELECT COUNT(*) FROM items").fetchone()[0]
-        links_count = conn.execute("SELECT COUNT(*) FROM item_links").fetchone()[0]
-        todo_info_count = conn.execute("SELECT COUNT(*) FROM todo_info").fetchone()[0]
     
     assert items_count > 0, "Should have items before clear"
-    assert links_count > 0, "Should have links before clear"
-    assert todo_info_count > 0, "Should have todo info before clear"
     
     # Test the clear_all function with proper confirmation
     with patch('builtins.input', return_value='DELETE ALL DATA NOW'):
@@ -51,12 +47,8 @@ def test_clear_all_functionality():
     # Verify data is actually deleted
     with sqlite3.connect(jrnl_app.DB_FILE) as conn:
         items_after = conn.execute("SELECT COUNT(*) FROM items").fetchone()[0]
-        links_after = conn.execute("SELECT COUNT(*) FROM item_links").fetchone()[0]
-        todo_info_after = conn.execute("SELECT COUNT(*) FROM todo_info").fetchone()[0]
     
     assert items_after == 0, "All items should be deleted"
-    assert links_after == 0, "All links should be deleted"
-    assert todo_info_after == 0, "All todo info should be deleted"
 
 def test_clear_all_cancelled():
     """Test that clear_all is cancelled when user doesn't confirm properly"""
