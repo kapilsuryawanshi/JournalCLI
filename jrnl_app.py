@@ -678,7 +678,7 @@ def enhanced_export_entire_database_with_editor():
 def format_item(item, prefix="", show_due_date=True):
     """Format an item (todo or note) for display"""
     # item has: id, status, title, creation_date, pid (as per new schema)
-    item_id, status, title, creation_date, pid = item
+    item_id, status, title, creation_date, pid, completion_date = item
     
     # Check if the status indicates a todo item (todo, doing, waiting, done) or a note
     if status in ['todo', 'doing', 'waiting', 'done']:
@@ -1277,7 +1277,7 @@ def show_due():
         # Prepare parameters for the query
         if excluded_ids_set:
             root_items = conn.execute("""
-                SELECT id, status, title, creation_date, pid
+                SELECT id, status, title, creation_date, pid, completion_date
                 FROM items
                 WHERE status IN ('todo', 'doing', 'waiting', 'done')
                   AND (pid IS NULL OR pid IN (SELECT id FROM items WHERE status = 'note'))
@@ -1288,7 +1288,7 @@ def show_due():
         else:
             # If no excluded IDs, just run query without NOT IN clause
             root_items = conn.execute("""
-                SELECT id, status, title, creation_date, pid
+                SELECT id, status, title, creation_date, pid, completion_date
                 FROM items
                 WHERE status IN ('todo', 'doing', 'waiting', 'done')
                   AND (pid IS NULL OR pid IN (SELECT id FROM items WHERE status = 'note'))
@@ -1353,17 +1353,17 @@ def show_due():
             all_descendants = temp_conn.execute("""
                 WITH RECURSIVE item_tree AS (
                     -- Base case: the root item itself
-                    SELECT id, status, title, creation_date, pid
+                    SELECT id, status, title, creation_date, pid, completion_date
                     FROM items
                     WHERE id = ?
 
                     UNION ALL
                     -- Recursive case: all child items (notes and tasks)
-                    SELECT i.id, i.status, i.title, i.creation_date, i.pid
+                    SELECT i.id, i.status, i.title, i.creation_date, i.pid, i.completion_date
                     FROM items i
                     JOIN item_tree it ON i.pid = it.id
                 )
-                SELECT id, status, title, creation_date, pid
+                SELECT id, status, title, creation_date, pid, completion_date
                 FROM item_tree
                 ORDER BY id ASC
             """, (root_item[0],)).fetchall()
@@ -1430,17 +1430,17 @@ def show_task():
                 all_descendants = temp_conn.execute("""
                     WITH RECURSIVE item_tree AS (
                         -- Base case: the root item itself
-                        SELECT id, status, title, creation_date, pid
+                        SELECT id, status, title, creation_date, pid, completion_date
                         FROM items
                         WHERE id = ?
 
                         UNION ALL
                         -- Recursive case: all child items
-                        SELECT i.id, i.status, i.title, i.creation_date, i.pid
+                        SELECT i.id, i.status, i.title, i.creation_date, i.pid, i.completion_date
                         FROM items i
                         JOIN item_tree it ON i.pid = it.id
                     )
-                    SELECT id, status, title, creation_date, pid
+                    SELECT id, status, title, creation_date, pid, completion_date
                     FROM item_tree
                     ORDER BY id
                 """, (root_item[0],)).fetchall()  # root_item[0] is id
@@ -1993,17 +1993,17 @@ def show_tasks_by_status():
                     all_descendants = temp_conn.execute("""
                         WITH RECURSIVE item_tree AS (
                             -- Base case: the root item itself
-                            SELECT id, status, title, creation_date, pid
+                            SELECT id, status, title, creation_date, pid, completion_date
                             FROM items
                             WHERE id = ?
 
                             UNION ALL
                             -- Recursive case: all child items (including completed ones)
-                            SELECT i.id, i.status, i.title, i.creation_date, i.pid
+                            SELECT i.id, i.status, i.title, i.creation_date, i.pid, i.completion_date
                             FROM items i
                             JOIN item_tree it ON i.pid = it.id
                         )
-                        SELECT id, status, title, creation_date, pid
+                        SELECT id, status, title, creation_date, pid, completion_date
                         FROM item_tree
                         ORDER BY id ASC
                     """, (root_item[0],)).fetchall()  # root_item[0] is id
