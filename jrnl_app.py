@@ -42,42 +42,6 @@ def init_db():
         )
         """)
 
-
-
-def get_item_by_id(item_id):
-    """Retrieve an item by ID
-    
-    Args:
-        item_id (int): The ID of the item to retrieve
-    
-    Returns:
-        tuple: (id, type, title, creation_date, pid) or None if not found
-    """
-    with sqlite3.connect(DB_FILE) as conn:
-        item = conn.execute(
-            "SELECT id, type, title, creation_date, pid FROM items WHERE id=?",
-            (item_id,)
-        ).fetchone()
-        return item
-
-
-def get_todo_info(item_id):
-    """Retrieve todo information by item ID
-    
-    Args:
-        item_id (int): The ID of the item to get todo info for
-    
-    Returns:
-        tuple: (status, due_date, completion_date, recur) or None if not found
-    """
-    with sqlite3.connect(DB_FILE) as conn:
-        todo_info = conn.execute(
-            "SELECT status, due_date, completion_date, recur FROM items WHERE id=?",
-            (item_id,)
-        ).fetchone()
-        return todo_info
-
-
 # --- Date Helpers ---
 
 def parse_due(keyword):
@@ -987,11 +951,11 @@ def update_task_status(task_ids, status, note_text=None):
                     # Create a new task with the same title and parent, but updated due date
                     new_task_id = add_item_with_details(task_title, task_type, next_due_date, parent_id)
                     
-                    # Set the recurrence pattern for the new task
+                    # Set the recurrence pattern for the new task - in NEW SCHEMA, update directly in items table
                     with sqlite3.connect(DB_FILE) as conn:
-                        # Since todo_info entry was created by add_item_with_details, update the recur field
+                        # Update the recurrence in the items table directly
                         conn.execute(
-                            "UPDATE todo_info SET recur=? WHERE item_id=?",
+                            "UPDATE items SET recur=? WHERE id=?",
                             (recur_pattern, new_task_id)
                         )
                     
@@ -999,45 +963,45 @@ def update_task_status(task_ids, status, note_text=None):
                     def recreate_hierarchy_recursive(original_parent_id, new_parent_id):
                         """Recursively recreate the hierarchy of children under a new parent."""
                         with sqlite3.connect(DB_FILE) as conn:
-                            # Get all direct children of the original parent
+                            # Get all direct children of the original parent - in NEW SCHEMA, second column is status, not type
                             children = conn.execute(
-                                "SELECT id, type, title, creation_date FROM items WHERE pid=?",
+                                "SELECT id, status, title, creation_date FROM items WHERE pid=?",
                                 (original_parent_id,)
                             ).fetchall()
                         
-                        for child_id, child_type, child_title, child_creation_date in children:
-                            # Get the child's todo info (status, due date, etc.) if it's a todo
+                        for child_id, child_status, child_title, child_creation_date in children:  # In new schema, second column is status, not type
+                            # Get the child's info from the same items table in new schema
                             with sqlite3.connect(DB_FILE) as conn:
-                                todo_info = conn.execute(
-                                    "SELECT status, due_date, completion_date, recur FROM todo_info WHERE item_id=?",
+                                item_info = conn.execute(
+                                    "SELECT status, due_date, completion_date, recur FROM items WHERE id=?",
                                     (child_id,)
                                 ).fetchone()
                             
                             # Create the child under the new parent
-                            if child_type == 'todo':
+                            if child_status == 'todo' or child_status in ['todo', 'doing', 'waiting', 'done']:
                                 # For todo children, recreate with original details
-                                new_child_id = add_item_with_details(child_title, child_type, child_creation_date, new_parent_id)
+                                new_child_id = add_item_with_details(child_title, child_status, child_creation_date, new_parent_id)  # In new schema, use child_status instead of child_type
                                 
-                                # Update the todo_info for the new child task
-                                with sqlite3.connect(DB_FILE) as conn:
-                                    # Reset status to 'todo' and update due_date and recurrence pattern for the new child
-                                    update_query = "UPDATE todo_info SET"
-                                    params = []
-                                    
-                                    if todo_info:
-                                        original_status, due_date_val, completion_date_val, recur_val = todo_info
-                                        # Reset status to 'todo', preserve due date and recurrence pattern
-                                        update_query += " status=?, due_date=?, recur=? WHERE item_id=?"
-                                        params = ['todo', due_date_val, recur_val, new_child_id]
-                                    else:
-                                        # Default values
-                                        update_query += " status=?, due_date=? WHERE item_id=?"
-                                        params = ['todo', child_creation_date, new_child_id]
-                                    
-                                    conn.execute(update_query, params)
+                                # Update the items table for the new child task in NEW SCHEMA
+                                if item_info:
+                                    original_status, due_date_val, completion_date_val, recur_val = item_info
+                                    # Reset status to 'todo', preserve due date and recurrence pattern
+                                    with sqlite3.connect(DB_FILE) as conn:
+                                        # Update status, due_date and recurrence pattern for the new child
+                                        conn.execute(
+                                            "UPDATE items SET status=?, due_date=?, recur=? WHERE id=?",
+                                            ('todo', due_date_val, recur_val, new_child_id)
+                                        )
+                                else:
+                                    # Default values
+                                    with sqlite3.connect(DB_FILE) as conn:
+                                        conn.execute(
+                                            "UPDATE items SET status=?, due_date=? WHERE id=?",
+                                            ('todo', child_creation_date, new_child_id)
+                                        )
                             else:
                                 # For note children, just add them
-                                new_child_id = add_item(child_title, child_type, new_parent_id)
+                                new_child_id = add_item(child_title, child_status, new_parent_id)  # In new schema, use child_status instead of child_type
                             
                             # Recursively recreate the hierarchy under this new child
                             recreate_hierarchy_recursive(child_id, new_child_id)
@@ -1122,7 +1086,7 @@ def edit_task(task_id, new_title):
     """Edit the title of a task"""
     with sqlite3.connect(DB_FILE) as conn:
         # Check if item exists
-        cursor = conn.execute("SELECT id FROM items WHERE id=? AND type='todo'", (task_id,))
+        cursor = conn.execute("SELECT id FROM items WHERE id=? AND status IN ('todo', 'doing', 'waiting', 'done')", (task_id,))
         if not cursor.fetchone():
             print(f"Error: Task with ID {task_id} not found")
             return False
@@ -1139,7 +1103,7 @@ def edit_note(note_id, new_text):
     """Edit the text of a note"""
     with sqlite3.connect(DB_FILE) as conn:
         # Check if item exists
-        cursor = conn.execute("SELECT id FROM items WHERE id=? AND type='note'", (note_id,))
+        cursor = conn.execute("SELECT id FROM items WHERE id=? AND status='note'", (note_id,))
         if not cursor.fetchone():
             print(f"Error: Note with ID {note_id} not found")
             return False
@@ -1157,7 +1121,7 @@ def add_task_under_note(note_id, text):
     """Add a task under a specific note"""
     # Verify the note exists
     with sqlite3.connect(DB_FILE) as conn:
-        note = conn.execute("SELECT id FROM items WHERE id=? AND type='note'", (note_id,)).fetchone()
+        note = conn.execute("SELECT id FROM items WHERE id=? AND status='note'", (note_id,)).fetchone()
         if not note:
             print(f"Error: Note with ID {note_id} does not exist")
             return False
@@ -1256,7 +1220,7 @@ def show_journal():
     with sqlite3.connect(DB_FILE) as conn:
         # Get all items ordered by creation date
         all_items = conn.execute(
-            "SELECT id, type, title, creation_date, pid FROM items ORDER BY creation_date ASC, id ASC"
+            "SELECT id, status, title, creation_date, pid FROM items ORDER BY creation_date ASC, id ASC"
         ).fetchall()
 
     # group items by creation_date
@@ -1545,8 +1509,9 @@ def show_note():
 def print_item_children(conn, parent_item_id, indent):
     """Helper function to recursively print child items of an item"""
     # Get child items of this item
+    # Get child items of this item - in NEW SCHEMA: id, status, title, creation_date, pid (instead of type)
     child_items = conn.execute("""
-        SELECT id, type, title, creation_date, pid
+        SELECT id, status, title, creation_date, pid
         FROM items
         WHERE pid = ?
         ORDER BY creation_date ASC, id ASC
@@ -1554,22 +1519,22 @@ def print_item_children(conn, parent_item_id, indent):
 
     # Print child items with current indentation
     for child_item in child_items:
-        item_id, item_type, title, creation_date, pid = child_item
-        if item_type == 'note':
+        item_id, item_status, title, creation_date, pid = child_item
+        if item_status == 'note':
             print(Fore.YELLOW + f"{indent}> {title}, #{item_id}, {creation_date}" + Style.RESET_ALL)
 
             # Recursively print children of this child item (grandchildren, etc.)
             print_item_children(conn, item_id, indent + "\t")
-        elif item_type == 'todo':
-            # For child todos
+        elif item_status in ['todo', 'doing', 'waiting', 'done']:  # For todo items in new schema
+            # For child todos - get info from the same items table in new schema
             with sqlite3.connect(DB_FILE) as temp_conn:
-                todo_info = temp_conn.execute(
-                    "SELECT status, due_date, completion_date, recur FROM todo_info WHERE item_id=?",
+                item_info = temp_conn.execute(
+                    "SELECT status, due_date, completion_date, recur FROM items WHERE id=?",
                     (item_id,)
                 ).fetchone()
                 
-            if todo_info:
-                status, due_date, completion_date, recur = todo_info
+            if item_info:
+                status, due_date, completion_date, recur = item_info
             else:
                 # Default values
                 status, due_date, completion_date, recur = 'todo', creation_date, None, None
@@ -1609,9 +1574,9 @@ def print_item_children(conn, parent_item_id, indent):
 def show_note_details(note_id):
     """Show details of a specific note, including child items and linked items"""
     with sqlite3.connect(DB_FILE) as conn:
-        # Get the specific item
+        # Get the specific item - in new schema: id, status, title, creation_date, pid
         item = conn.execute("""
-            SELECT id, type, title, creation_date, pid
+            SELECT id, status, title, creation_date, pid
             FROM items
             WHERE id=?
         """, (note_id,)).fetchone()
@@ -1620,18 +1585,18 @@ def show_note_details(note_id):
             print(f"Error: Item with ID {note_id} does not exist")
             return
 
-        item_id, item_type, title, creation_date, pid = item
+        item_id, status, title, creation_date, pid = item
 
-        if item_type != 'note':
+        if status != 'note':
             print(f"Error: Item with ID {note_id} is not a note")
             return
 
         # Print the note text in consistent format
         print(Fore.YELLOW + f"- {title}, #{item_id}, {creation_date}" + Style.RESET_ALL)
 
-        # Get child items (items that have this note as parent)
+        # Get child items (items that have this note as parent) - in new schema: id, status, title, creation_date, pid
         child_items = conn.execute("""
-            SELECT id, type, title, creation_date, pid
+            SELECT id, status, title, creation_date, pid
             FROM items
             WHERE pid = ?
             ORDER BY creation_date ASC, id ASC
@@ -1641,21 +1606,21 @@ def show_note_details(note_id):
         has_children = len(child_items) > 0
         if has_children:
             for child_item in child_items:
-                child_item_id, child_item_type, child_title, child_creation_date, child_pid = child_item
-                if child_item_type == 'note':
+                child_item_id, child_status, child_title, child_creation_date, child_pid = child_item
+                if child_status == 'note':
                     print(Fore.YELLOW + f"\t> {child_title}, {child_item_id}, {child_creation_date}" + Style.RESET_ALL)
                     # Recursively display children of this child note (if any)
                     show_child_item_details(conn, child_item_id, "\t\t")
-                elif child_item_type == 'todo':
-                    # For child todos
+                elif child_status in ['todo', 'doing', 'waiting', 'done']:
+                    # For child todos - get info from the same items table in new schema
                     with sqlite3.connect(DB_FILE) as temp_conn:
-                        todo_info = temp_conn.execute(
-                            "SELECT status, due_date, completion_date, recur FROM todo_info WHERE item_id=?",
+                        item_info = temp_conn.execute(
+                            "SELECT status, due_date, completion_date, recur FROM items WHERE id=?",
                             (child_item_id,)
                         ).fetchone()
                         
-                    if todo_info:
-                        status, due_date, completion_date, recur = todo_info
+                    if item_info:
+                        status, due_date, completion_date, recur = item_info
                     else:
                         # Default values
                         status, due_date, completion_date, recur = 'todo', child_creation_date, None, None
@@ -1699,15 +1664,15 @@ def show_note_details(note_id):
                     # Recursively display children of this child note (if any)
                     show_child_item_details(conn, child_item_id, "\t\t")
                 elif child_item_type == 'todo':
-                    # For child todos
+                    # For child todos - get info from the same items table in new schema
                     with sqlite3.connect(DB_FILE) as temp_conn:
-                        todo_info = temp_conn.execute(
-                            "SELECT status, due_date, completion_date, recur FROM todo_info WHERE item_id=?",
+                        item_info = temp_conn.execute(
+                            "SELECT status, due_date, completion_date, recur FROM items WHERE id=?",
                             (child_item_id,)
                         ).fetchone()
                         
-                    if todo_info:
-                        status, due_date, completion_date, recur = todo_info
+                    if item_info:
+                        status, due_date, completion_date, recur = item_info
                     else:
                         # Default values
                         status, due_date, completion_date, recur = 'todo', child_creation_date, None, None
@@ -1746,9 +1711,9 @@ def show_note_details(note_id):
 
 def show_child_item_details(conn, item_id, indent_prefix):
     """Helper function to recursively display child items of an item"""
-    # Get child items of this item
+    # Get child items of this item - in new schema: id, status, title, creation_date, pid
     child_items = conn.execute("""
-        SELECT id, type, title, creation_date, pid
+        SELECT id, status, title, creation_date, pid
         FROM items
         WHERE pid = ?
         ORDER BY creation_date ASC, id ASC
@@ -1756,22 +1721,22 @@ def show_child_item_details(conn, item_id, indent_prefix):
 
     # Print child items with additional indentation
     for child_item in child_items:
-        item_id, item_type, child_title, child_creation_date, child_pid = child_item
-        if item_type == 'note':
+        item_id, item_status, child_title, child_creation_date, child_pid = child_item
+        if item_status == 'note':
             print(Fore.YELLOW + f"{indent_prefix}> {child_title}, #{item_id}, {child_creation_date}" + Style.RESET_ALL)
 
             # Recursively display children of this child item (if any)
             show_child_item_details(conn, item_id, indent_prefix + "\t")
-        elif item_type == 'todo':
-            # For child todos
+        elif item_status in ['todo', 'doing', 'waiting', 'done']:  # For todo items in new schema
+            # For child todos - get info from the same items table in new schema
             with sqlite3.connect(DB_FILE) as temp_conn:
-                todo_info = temp_conn.execute(
-                    "SELECT status, due_date, completion_date, recur FROM todo_info WHERE item_id=?",
+                item_info = temp_conn.execute(
+                    "SELECT status, due_date, completion_date, recur FROM items WHERE id=?",
                     (item_id,)
                 ).fetchone()
                 
-            if todo_info:
-                status, due_date, completion_date, recur = todo_info
+            if item_info:
+                status, due_date, completion_date, recur = item_info
             else:
                 # Default values
                 status, due_date, completion_date, recur = 'todo', child_creation_date, None, None
@@ -1792,16 +1757,17 @@ def show_child_item_details(conn, item_id, indent_prefix):
             if recur:
                 task_text += f", +{recur}"
 
-            # Show due date
-            due = datetime.strptime(due_date, "%Y-%m-%d").date()
-            today = datetime.now().date()
-            if status != "done":
-                if due < today:
-                    task_text += Fore.RED + f", {format_date_with_day(due_date)}"
-                elif due == today:
-                    task_text += Fore.CYAN + f", {format_date_with_day(due_date)}"
-                else:
-                    task_text += f", {format_date_with_day(due_date)}"
+            # Show due date only if it exists
+            if due_date:  # Only show due date if it exists
+                due = datetime.strptime(due_date, "%Y-%m-%d").date()
+                today = datetime.now().date()
+                if status != "done":
+                    if due < today:
+                        task_text += Fore.RED + f", {format_date_with_day(due_date)}"
+                    elif due == today:
+                        task_text += Fore.CYAN + f", {format_date_with_day(due_date)}"
+                    else:
+                        task_text += f", {format_date_with_day(due_date)}"
 
             print(Fore.YELLOW + f"{indent_prefix}{task_text}" + Style.RESET_ALL)
 
@@ -2134,45 +2100,38 @@ def main():
                 # Skip unknown option
                 i += 1
         
-        # Get the item type to determine what operations are valid
+        # Get the item status to determine what operations are valid - in new schema, this is stored in the status column
         with sqlite3.connect(DB_FILE) as conn:
-            item = conn.execute("SELECT type FROM items WHERE id=?", (item_id,)).fetchone()
+            item = conn.execute("SELECT status FROM items WHERE id=?", (item_id,)).fetchone()
         
         if not item:
             print(f"Error: Item with ID {item_id} does not exist")
             return
         
-        item_type = item[0]  # 'note' or 'todo'
+        item_status = item[0]  # 'note', 'todo', 'doing', 'waiting', or 'done'
+        # Determine if this is a note or task
+        if item_status == 'note':
+            item_type = 'note'
+        else:  # task (any other status is a task)
+            item_type = 'todo'  # Using 'todo' to represent any task type
         
         # Perform operations
         if new_text:
-            if item_type == 'note':
+            if item_status == 'note':  # For notes
                 edit_note(item_id, new_text)
-            else:  # task
+            else:  # For tasks
                 edit_task(item_id, new_text)
         
-        if new_due and item_type == 'todo':
+        if new_due and item_status != 'note':
+            # In the new schema, update the due_date field directly in the items table
             with sqlite3.connect(DB_FILE) as conn:
-                # Check if a record exists in todo_info, if not create one
-                existing = conn.execute(
-                    "SELECT item_id FROM todo_info WHERE item_id=?",
-                    (item_id,)
-                ).fetchone()
-
-                if not existing:
-                    # Create a new record with default values
-                    conn.execute(
-                        "INSERT INTO todo_info (item_id, status, due_date) VALUES (?, 'todo', ?)",
-                        (item_id, datetime.now().date().strftime("%Y-%m-%d"))
-                    )
-
                 conn.execute(
-                    "UPDATE todo_info SET due_date=? WHERE item_id=?",
+                    "UPDATE items SET due_date=? WHERE id=?",
                     (new_due.strftime("%Y-%m-%d"), item_id)
                 )
-                print(f"Updated due date for {item_type} {item_id} to {new_due.strftime('%Y-%m-%d')}")
+                print(f"Updated due date for {item_status} {item_id} to {new_due.strftime('%Y-%m-%d')}")
         
-        if recur_pattern and item_type == 'todo':
+        if recur_pattern and item_status != 'note':
             # Validate and set recur pattern
             if set_task_recur([item_id], recur_pattern):
                 print(f"Set recur pattern '{recur_pattern}' for task {item_id}")
