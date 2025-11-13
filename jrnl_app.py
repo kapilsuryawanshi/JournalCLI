@@ -1568,24 +1568,85 @@ def display_search_results(grouped):
 
 def show_completed_tasks():
     with sqlite3.connect(DB_FILE) as conn:
-        items = conn.execute("""
-            SELECT id, status, title, creation_date, pid, completion_date
-            FROM items
-            WHERE status = 'done' AND completion_date IS NOT NULL
+        # Get all completed root tasks to build hierarchies from
+        # A root completed task is defined as: a task which is done and which does not have any parent or which does not have a task as parent
+        completed_roots = conn.execute("""
+            SELECT id, status, title, creation_date, pid, completion_date FROM items
+            WHERE status = 'done' AND completion_date IS NOT NULL AND (pid IS NULL OR pid IN (SELECT id FROM items WHERE status = 'note'))
             ORDER BY completion_date ASC, id ASC
         """).fetchall()
 
-        # Group items by completion date
-        grouped = defaultdict(list)
-        for item in items:
-            # In the new single table schema, completion_date is part of the main row
-            completion_date = [item[5]] if item[5] else None  # item[5] is completion_date in new schema
-                
-            if completion_date and completion_date[0]:
-                completion_date_str = completion_date[0]
-                grouped[completion_date_str].append(item)
+        if not completed_roots:
+            # No completed root tasks found
+            return
 
-    # Display items grouped by completion date
+    # For each completed root task, get all its descendants (children, grandchildren, etc.)
+    all_descendants_for_display = []
+    for root in completed_roots:
+        root_id = root[0]  # item[0] is id
+        
+        with sqlite3.connect(DB_FILE) as conn:
+            # Get all descendants of this root completed task using recursive query
+            descendants = conn.execute("""
+                WITH RECURSIVE item_tree AS (
+                    -- Base case: the root task itself
+                    SELECT id, status, title, creation_date, pid, completion_date
+                    FROM items
+                    WHERE id = ?
+
+                    UNION ALL
+                    -- Recursive case: all descendant items
+                    SELECT i.id, i.status, i.title, i.creation_date, i.pid, i.completion_date
+                    FROM items i
+                    JOIN item_tree it ON i.pid = it.id
+                )
+                SELECT id, status, title, creation_date, pid, completion_date
+                FROM item_tree
+                ORDER BY id ASC
+            """, (root_id,)).fetchall()
+            
+            all_descendants_for_display.extend(descendants)
+
+    # Group all descendants by the completion date of their root completed task
+    grouped = defaultdict(list)
+    
+    # Build a map of item ID to its root completion date
+    item_to_root_completion_date = {}
+    
+    for root in completed_roots:
+        root_id = root[0]
+        root_completion_date = root[5]  # completion_date is at index 5
+        
+        # Find all descendants of this root and map them to its completion date
+        with sqlite3.connect(DB_FILE) as conn:
+            descendant_ids = conn.execute("""
+                WITH RECURSIVE item_tree AS (
+                    -- Base case: the root task itself
+                    SELECT id
+                    FROM items
+                    WHERE id = ?
+
+                    UNION ALL
+                    -- Recursive case: all descendant items
+                    SELECT i.id
+                    FROM items i
+                    JOIN item_tree it ON i.pid = it.id
+                )
+                SELECT id
+                FROM item_tree
+            """, (root_id,)).fetchall()
+            
+            for (desc_id,) in descendant_ids:
+                item_to_root_completion_date[desc_id] = root_completion_date
+
+    # Now group all the descendants that we'll display
+    for item in all_descendants_for_display:
+        item_id = item[0]
+        if item_id in item_to_root_completion_date:
+            completion_date = item_to_root_completion_date[item_id]
+            grouped[completion_date].append(item)
+
+    # Display items grouped by the completion date of their root task
     for completion_date in sorted(grouped.keys()):
         print()
         print(format_date_with_day(completion_date))
@@ -1744,6 +1805,7 @@ def main():
         new_due = None
         recur_pattern = None
         new_parent_id = None  # For changing parent
+        parent_option_provided = False  # Track if parent option was provided
         
         i = 0
         while i < len(options):
@@ -1759,6 +1821,7 @@ def main():
             elif options[i] == "-parent" and i + 1 < len(options):
                 # Parse parent ID or 'none'
                 parent_value = options[i + 1]
+                parent_option_provided = True  # Mark that parent option was provided
                 if parent_value.lower() == 'none':
                     new_parent_id = None
                 elif parent_value.isdigit():
@@ -1795,7 +1858,7 @@ def main():
             if set_task_recur([item_id], recur_pattern):
                 print(f"Set recur pattern '{recur_pattern}' for task {item_id}")
         
-        if new_parent_id is not None:
+        if parent_option_provided:
             set_item_parent(item_id, new_parent_id)
 
     elif cmd in ["task", "note"]:  # Handle new consolidated commands
