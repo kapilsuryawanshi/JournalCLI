@@ -296,9 +296,9 @@ def export_to_file(item_id, file_path):
         bool: True if export was successful, False otherwise
     """
     with sqlite3.connect(DB_FILE) as conn:
-        # Get the root item - in new schema: id, status, title, creation_date, pid
+        # Get the root item - in new schema: id, status, title, creation_date, pid, completion_date
         root_item = conn.execute(
-            "SELECT id, status, title, creation_date, pid FROM items WHERE id=?",
+            "SELECT id, status, title, creation_date, pid, completion_date FROM items WHERE id=?",
             (item_id,)
         ).fetchone()
 
@@ -552,9 +552,9 @@ def export_entire_database(file_path):
         bool: True if export was successful, False otherwise
     """
     with sqlite3.connect(DB_FILE) as conn:
-        # Get all items, ordered by creation date and id - in new schema: id, status, title, creation_date, pid
+        # Get all items, ordered by creation date and id - in new schema: id, status, title, creation_date, pid, completion_date
         all_items = conn.execute(
-            "SELECT id, status, title, creation_date, pid FROM items ORDER BY creation_date ASC, id ASC"
+            "SELECT id, status, title, creation_date, pid, completion_date FROM items ORDER BY creation_date ASC, id ASC"
         ).fetchall()
 
     if not all_items:
@@ -593,7 +593,7 @@ def export_entire_database(file_path):
 
     # Define a nested function to recursively build content for each tree
     def build_content_recursive(item, current_level=0):
-        item_id, status, title, creation_date, pid = item  # Note: in new schema, second column is status, not type
+        item_id, status, title, creation_date, pid, _ = item  # Note: in new schema, second column is status, not type
         
         # Determine the prefix based on the item status
         prefix = determine_prefix_from_status(status)
@@ -1181,7 +1181,7 @@ def show_journal():
     with sqlite3.connect(DB_FILE) as conn:
         # Get all items ordered by creation date
         all_items = conn.execute(
-            "SELECT id, status, title, creation_date, pid FROM items ORDER BY creation_date ASC, id ASC"
+            "SELECT id, status, title, creation_date, pid, completion_date FROM items ORDER BY creation_date ASC, id ASC"
         ).fetchall()
 
     # group items by creation_date
@@ -1465,9 +1465,9 @@ def add_item_with_details(title, item_type, due_date=None, parent_id=None):
 def show_item_details(item_id):
     """Show details of a specific item (note or task), including child items and linked items"""
     with sqlite3.connect(DB_FILE) as conn:
-        # Get the specific item - in new schema: id, status, title, creation_date, pid
+        # Get the specific item - in new schema: id, status, title, creation_date, pid, completion_date
         item = conn.execute("""
-            SELECT id, status, title, creation_date, pid
+            SELECT id, status, title, creation_date, pid, completion_date
             FROM items
             WHERE id=?
         """, (item_id,)).fetchone()
@@ -1476,24 +1476,24 @@ def show_item_details(item_id):
             print(f"Error: Item with ID {item_id} does not exist")
             return
 
-        item_id, status, title, creation_date, pid = item
+        item_id, status, title, creation_date, pid, completion_date = item
 
         # Get all related items to build the entire tree (this item and all its descendants)
         all_related_items = conn.execute("""
             WITH RECURSIVE item_tree AS (
                 -- Base case: the selected item
-                SELECT id, status, title, creation_date, pid
+                SELECT id, status, title, creation_date, pid, completion_date
                 FROM items
                 WHERE id = ?
 
                 UNION ALL
 
                 -- Recursive case: child items
-                SELECT i.id, i.status, i.title, i.creation_date, i.pid
+                SELECT i.id, i.status, i.title, i.creation_date, i.pid, i.completion_date
                 FROM items i
                 JOIN item_tree it ON i.pid = it.id
             )
-            SELECT id, status, title, creation_date, pid FROM item_tree
+            SELECT id, status, title, creation_date, pid, completion_date FROM item_tree
             ORDER BY id;
             """, (item_id,)).fetchall()
 
@@ -1527,7 +1527,7 @@ def search_items(search_text):
         # Search in items (title column)
         items = conn.execute(
             """
-            SELECT id, type, title, creation_date, pid
+            SELECT id, status, title, creation_date, pid, completion_date
             FROM items
             WHERE title LIKE ?
             ORDER BY creation_date ASC,id ASC
@@ -1540,7 +1540,7 @@ def search_items(search_text):
 
     # Add items to grouped dict
     for item in items:
-        grouped[item[3]]["items"].append(item)  # item[3] is creation_date
+        grouped[item[3]]["items"].append(item)  # item[3] is still creation_date
 
     return grouped, items
 
@@ -1603,7 +1603,7 @@ def show_tasks_by_status():
         # A root task is defined as: a task which does not have any parent or which does not have a task as parent
         # So we want tasks where pid IS NULL OR where the parent item has type 'note'
         root_items = conn.execute("""
-            SELECT id, status, title, creation_date, pid
+            SELECT id, status, title, creation_date, pid, completion_date
             FROM items
             WHERE status IN ('todo', 'doing', 'waiting')
               AND (pid IS NULL OR pid IN (SELECT id FROM items WHERE status = 'note'))
