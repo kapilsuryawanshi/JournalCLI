@@ -37,13 +37,17 @@ def test_show_note_by_id():
         
         # Verify that the output contains the note content and ID
         assert "Test note content" in output
-        assert f"(id:{note_id})" in output
+        assert f"#{note_id}" in output
         assert "note" in output.lower()
 
     finally:
         # Clean up: remove the temporary database file
         jrnl_app.DB_FILE = original_db_file
-        os.unlink(temp_db_path)
+        try:
+            os.unlink(temp_db_path)
+        except:
+            # On Windows, the file might be locked, so we ignore cleanup errors
+            pass
 
 
 def test_show_task_by_id():
@@ -72,12 +76,16 @@ def test_show_task_by_id():
         
         # Verify that the output contains the task content and ID
         assert "Test task content" in output
-        assert f"(id:{task_id})" in output
+        assert f"#{task_id}" in output
 
     finally:
         # Clean up: remove the temporary database file
         jrnl_app.DB_FILE = original_db_file
-        os.unlink(temp_db_path)
+        try:
+            os.unlink(temp_db_path)
+        except:
+            # On Windows, the file might be locked, so we ignore cleanup errors
+            pass
 
 
 def test_show_nonexistent_item():
@@ -107,7 +115,11 @@ def test_show_nonexistent_item():
     finally:
         # Clean up: remove the temporary database file
         jrnl_app.DB_FILE = original_db_file
-        os.unlink(temp_db_path)
+        try:
+            os.unlink(temp_db_path)
+        except:
+            # On Windows, the file might be locked, so we ignore cleanup errors
+            pass
 
 
 def test_show_note_with_child_items():
@@ -142,8 +154,8 @@ def test_show_note_with_child_items():
         
         # Verify that the output contains the parent note content
         assert "Parent note" in output
-        assert f"(id:{parent_note_id})" in output
-        
+        assert f"#{parent_note_id}" in output
+
         # Verify that the output contains the child items
         assert "Child note" in output
         assert "Child task" in output
@@ -151,7 +163,11 @@ def test_show_note_with_child_items():
     finally:
         # Clean up: remove the temporary database file
         jrnl_app.DB_FILE = original_db_file
-        os.unlink(temp_db_path)
+        try:
+            os.unlink(temp_db_path)
+        except:
+            # On Windows, the file might be locked, so we ignore cleanup errors
+            pass
 
 
 def test_show_task_with_child_items():
@@ -170,10 +186,10 @@ def test_show_task_with_child_items():
 
         # Add a parent task
         parent_task_id = jrnl_app.add_item("Parent task", "todo")
-        
+
         # Add a child note
         child_note_id = jrnl_app.add_item("Child note", "note", parent_task_id)
-        
+
         # Add a child task
         child_task_id = jrnl_app.add_item("Child task", "todo", parent_task_id)
 
@@ -183,11 +199,11 @@ def test_show_task_with_child_items():
             jrnl_app.show_item_details(parent_task_id)
 
         output = captured_output.getvalue()
-        
+
         # Verify that the output contains the parent task content
         assert "Parent task" in output
-        assert f"(id:{parent_task_id})" in output
-        
+        assert f"#{parent_task_id}" in output
+
         # Verify that the output contains the child items
         assert "Child note" in output
         assert "Child task" in output
@@ -195,7 +211,62 @@ def test_show_task_with_child_items():
     finally:
         # Clean up: remove the temporary database file
         jrnl_app.DB_FILE = original_db_file
-        os.unlink(temp_db_path)
+        try:
+            os.unlink(temp_db_path)
+        except:
+            # On Windows, the file might be locked, so we ignore cleanup errors
+            pass
+
+
+def test_show_item_with_ancestor_hierarchy():
+    """Test the show command to ensure it prints ancestor hierarchy of the item"""
+    # Create a temporary database file
+    with tempfile.NamedTemporaryFile(delete=False, suffix='.db') as temp_db:
+        temp_db_path = temp_db.name
+
+    # Set the global DB_FILE in jrnl_app to our temp database
+    original_db_file = jrnl_app.DB_FILE
+    jrnl_app.DB_FILE = temp_db_path
+
+    try:
+        # Initialize the database
+        jrnl_app.init_db()
+
+        # Create a hierarchy: Grandparent -> Parent -> Child
+        grandparent_id = jrnl_app.add_item("Grandparent note", "note")
+        parent_id = jrnl_app.add_item("Parent note", "note", grandparent_id)
+        child_id = jrnl_app.add_item("Child note", "note", parent_id)
+
+        # Capture the output
+        captured_output = StringIO()
+        with patch('sys.stdout', captured_output):
+            jrnl_app.show_item_details(child_id)
+
+        output = captured_output.getvalue()
+
+        # Verify that the output contains the child item content
+        assert "Child note" in output
+        assert f"#{child_id}" in output
+
+        # Verify that the output also contains ancestor hierarchy information
+        # The new requirement is to show the ancestor hierarchy (parents, grandparents, etc.)
+        # In the new implementation, showing item X should display:
+        # - The ancestor hierarchy leading to X
+        # - The item X itself
+        # - The descendants of X (already implemented)
+        assert "Grandparent note" in output
+        assert "Parent note" in output
+        assert f"#{grandparent_id}" in output
+        assert f"#{parent_id}" in output
+
+    finally:
+        # Clean up: remove the temporary database file
+        jrnl_app.DB_FILE = original_db_file
+        try:
+            os.unlink(temp_db_path)
+        except:
+            # On Windows, the file might be locked, so we ignore cleanup errors
+            pass
 
 
 if __name__ == "__main__":
@@ -205,4 +276,5 @@ if __name__ == "__main__":
     test_show_nonexistent_item()
     test_show_note_with_child_items()
     test_show_task_with_child_items()
+    test_show_item_with_ancestor_hierarchy()
     print("All tests passed!")

@@ -60,23 +60,23 @@ def test_import_ignores_comment_lines():
         
         # Check the items in the database
         with sqlite3.connect(DB_FILE) as conn:
-            items = conn.execute("SELECT title, type FROM items ORDER BY id").fetchall()
-            
+            items = conn.execute("SELECT title, status FROM items ORDER BY id").fetchall()
+
             # Should have exactly these items in this order (excluding comments):
             expected_items = [
                 ("Task 1", "todo"),        # . Task 1
-                ("Note 1", "note"),        # - Note 1  
-                ("Completed task", "todo"), # x Completed task
-                ("Task in progress", "todo"), # / Task in progress
-                ("Waiting task", "todo"),  # \ Waiting task
+                ("Note 1", "note"),        # - Note 1
+                ("Completed task", "done"), # x Completed task
+                ("Task in progress", "doing"), # / Task in progress
+                ("Waiting task", "waiting"),  # \ Waiting task
                 ("Final note", "note"),    # - Final note
             ]
-            
+
             assert len(items) == len(expected_items)
-            for i, (title, item_type) in enumerate(items):
-                expected_title, expected_type = expected_items[i]
+            for i, (title, item_status) in enumerate(items):
+                expected_title, expected_status = expected_items[i]
                 assert title == expected_title
-                assert item_type == expected_type
+                assert item_status == expected_status
     finally:
         if os.path.exists(test_file):
             os.remove(test_file)
@@ -102,19 +102,19 @@ def test_import_ignores_comment_lines_with_spaces():
         
         # Check the items in the database
         with sqlite3.connect(DB_FILE) as conn:
-            items = conn.execute("SELECT title, type FROM items ORDER BY id").fetchall()
-            
+            items = conn.execute("SELECT title, status FROM items ORDER BY id").fetchall()
+
             # Should have these 2 items:
             expected_items = [
                 ("Task 1", "todo"),        # . Task 1
-                ("Note 1", "note"),        # - Note 1  
+                ("Note 1", "note"),        # - Note 1
             ]
-            
+
             assert len(items) == len(expected_items)
-            for i, (title, item_type) in enumerate(items):
-                expected_title, expected_type = expected_items[i]
+            for i, (title, item_status) in enumerate(items):
+                expected_title, expected_status = expected_items[i]
                 assert title == expected_title
-                assert item_type == expected_type
+                assert item_status == expected_status
     finally:
         if os.path.exists(test_file):
             os.remove(test_file)
@@ -147,19 +147,19 @@ def test_import_empty_and_comment_lines_mixed():
         
         # Check the items in the database
         with sqlite3.connect(DB_FILE) as conn:
-            items = conn.execute("SELECT title, type FROM items ORDER BY id").fetchall()
-            
+            items = conn.execute("SELECT title, status FROM items ORDER BY id").fetchall()
+
             # Should have these 2 items:
             expected_items = [
                 ("Real task", "todo"),     # . Real task
-                ("Real note", "note"),     # - Real note  
+                ("Real note", "note"),     # - Real note
             ]
-            
+
             assert len(items) == len(expected_items)
-            for i, (title, item_type) in enumerate(items):
-                expected_title, expected_type = expected_items[i]
+            for i, (title, item_status) in enumerate(items):
+                expected_title, expected_status = expected_items[i]
                 assert title == expected_title
-                assert item_type == expected_type
+                assert item_status == expected_status
     finally:
         if os.path.exists(test_file):
             os.remove(test_file)
