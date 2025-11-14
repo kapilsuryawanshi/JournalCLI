@@ -70,7 +70,7 @@ The application uses a simplified database schema with the following tables:
 
 ### View Items
 
-- `j show <id>` - Show specific note or task details by ID
+- `j show <id>` - Show specific note or task details by ID, including the complete context with ancestor hierarchy (if any) and descendants
 - `j list <page|note|task> [due|status|done|today]` - List items with optional grouping
   - `j list page` - List all journal entries (grouped by date)
   - `j list note` - List notes only
