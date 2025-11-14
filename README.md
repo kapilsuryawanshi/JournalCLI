@@ -71,6 +71,14 @@ The application uses a simplified database schema with the following tables:
 ### View Items
 
 - `j show <id>` - Show specific note or task details by ID
+- `j list <page|note|task> [due|status|done|today]` - List items with optional grouping
+  - `j list page` - List all journal entries (grouped by date)
+  - `j list note` - List notes only
+  - `j list task` - List tasks (grouped by creation date)
+  - `j list task due` - List tasks grouped by due date
+  - `j list task status` - List tasks grouped by status
+  - `j list task done` - List completed tasks
+  - `j list task today` - List only today and overdue tasks
 
 ### Task Operations
 

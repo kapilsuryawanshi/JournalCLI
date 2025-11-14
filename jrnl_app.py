@@ -1584,7 +1584,7 @@ def show_completed_tasks():
     all_descendants_for_display = []
     for root in completed_roots:
         root_id = root[0]  # item[0] is id
-        
+
         with sqlite3.connect(DB_FILE) as conn:
             # Get all descendants of this root completed task using recursive query
             descendants = conn.execute("""
@@ -1604,19 +1604,19 @@ def show_completed_tasks():
                 FROM item_tree
                 ORDER BY id ASC
             """, (root_id,)).fetchall()
-            
+
             all_descendants_for_display.extend(descendants)
 
     # Group all descendants by the completion date of their root completed task
     grouped = defaultdict(list)
-    
+
     # Build a map of item ID to its root completion date
     item_to_root_completion_date = {}
-    
+
     for root in completed_roots:
         root_id = root[0]
         root_completion_date = root[5]  # completion_date is at index 5
-        
+
         # Find all descendants of this root and map them to its completion date
         with sqlite3.connect(DB_FILE) as conn:
             descendant_ids = conn.execute("""
@@ -1635,7 +1635,7 @@ def show_completed_tasks():
                 SELECT id
                 FROM item_tree
             """, (root_id,)).fetchall()
-            
+
             for (desc_id,) in descendant_ids:
                 item_to_root_completion_date[desc_id] = root_completion_date
 
@@ -1657,6 +1657,150 @@ def show_completed_tasks():
         for i, root_item in enumerate(root_items):
             is_last = (i == len(root_items) - 1)
             print_item_tree(root_item, children, item_dict, is_last, "\t", is_root=True)
+
+def show_today_and_overdue_tasks():
+    """Show only tasks that are due today or overdue"""
+    with sqlite3.connect(DB_FILE) as conn:
+        # First, find all completed root tasks
+        completed_roots = conn.execute("""
+            SELECT id FROM items
+            WHERE status = 'done' AND pid IS NULL
+        """).fetchall()
+
+        completed_root_ids = [str(row[0]) for row in completed_roots]
+
+        # Find all descendants of these completed roots using recursive CTE
+        if completed_root_ids:
+            exclude_query = """
+                WITH RECURSIVE item_descendants AS (
+                    -- Base case: the completed root tasks themselves
+                    SELECT id FROM items WHERE id IN ({})
+
+                    UNION ALL
+                    -- Recursive case: child items of items in the descendants
+                    SELECT i.id
+                    FROM items i
+                    JOIN item_descendants idesc ON i.pid = idesc.id
+                )
+                SELECT id FROM item_descendants
+            """.format(",".join("?" * len(completed_root_ids)))
+
+            excluded_item_ids = conn.execute(exclude_query, completed_root_ids).fetchall()
+            excluded_ids_set = set(row[0] for row in excluded_item_ids)
+        else:
+            excluded_ids_set = set()
+
+        # Get root tasks (tasks with no parent or with note as parent) that are not completed
+        # and are either overdue or due today
+        today = datetime.now().date().strftime("%Y-%m-%d")
+
+        # Prepare the query with exclusion of completed tasks and filter for today/overdue
+        if excluded_ids_set:
+            root_items = conn.execute("""
+                SELECT id, status, title, creation_date, pid, completion_date
+                FROM items
+                WHERE status IN ('todo', 'doing', 'waiting', 'done')
+                  AND (pid IS NULL OR pid IN (SELECT id FROM items WHERE status = 'note'))
+                  AND id NOT IN ({})
+                  AND due_date IS NOT NULL
+                  AND due_date <= ?
+                ORDER BY due_date ASC, id ASC
+            """.format(",".join("?" * len(list(excluded_ids_set)))), list(excluded_ids_set) + [today]
+            ).fetchall()
+        else:
+            # If no excluded IDs, just run query without NOT IN clause
+            root_items = conn.execute("""
+                SELECT id, status, title, creation_date, pid, completion_date
+                FROM items
+                WHERE status IN ('todo', 'doing', 'waiting', 'done')
+                  AND (pid IS NULL OR pid IN (SELECT id FROM items WHERE status = 'note'))
+                  AND due_date IS NOT NULL
+                  AND due_date <= ?
+                ORDER BY due_date ASC, id ASC
+            """, (today,)).fetchall()
+
+    # Group root items by their due date buckets (only today and overdue)
+    buckets = {
+        "Overdue": [],
+        "Due Today": []
+    }
+
+    # Process each root item and determine its bucket
+    for root_item in root_items:
+        # Get the due date for this root item - in new schema due_date is in items table
+        due_date_str = root_item[5]  # completion_date is at index 5, but due date is in due_date field
+        # Actually, let me get the due date directly from the DB for this specific item
+        with sqlite3.connect(DB_FILE) as temp_conn:
+            due_date_result = temp_conn.execute(
+                "SELECT due_date FROM items WHERE id=?",
+                (root_item[0],)
+            ).fetchone()
+
+        if due_date_result and due_date_result[0]:
+            due_date_str = due_date_result[0]
+            due_date = datetime.strptime(due_date_str, "%Y-%m-%d").date()
+            today_date = datetime.now().date()
+
+            if due_date < today_date:
+                bucket_label = "Overdue"
+            elif due_date == today_date:
+                bucket_label = "Due Today"
+            else:
+                # Skip future tasks (shouldn't happen due to SQL filter, but just in case)
+                continue
+        else:
+            # Skip items without due date (shouldn't happen due to SQL filter)
+            continue
+
+        # Get complete hierarchy under this root item (including all children - notes and tasks)
+        with sqlite3.connect(DB_FILE) as temp_conn:
+            all_descendants = temp_conn.execute("""
+                WITH RECURSIVE item_tree AS (
+                    -- Base case: the root item itself
+                    SELECT id, status, title, creation_date, pid, completion_date
+                    FROM items
+                    WHERE id = ?
+
+                    UNION ALL
+                    -- Recursive case: all child items (notes and tasks)
+                    SELECT i.id, i.status, i.title, i.creation_date, i.pid, i.completion_date
+                    FROM items i
+                    JOIN item_tree it ON i.pid = it.id
+                )
+                SELECT id, status, title, creation_date, pid, completion_date
+                FROM item_tree
+                ORDER BY id ASC
+            """, (root_item[0],)).fetchall()
+
+        # Build tree structure for this root with all its descendants
+        all_root_nodes, all_children, all_item_dict = build_item_tree(all_descendants)
+
+        # Add the root and its complete hierarchy to the appropriate bucket
+        if all_root_nodes:  # Should only have one root node
+            root_node = all_root_nodes[0]
+            bucket_info = {
+                'root_node': root_node,
+                'children': all_children,
+                'item_dict': all_item_dict
+            }
+            buckets[bucket_label].append(bucket_info)
+
+    # Print each bucket in the correct order
+    for label in ["Overdue", "Due Today"]:
+        if buckets[label]:
+            print(f"\n{label}")
+            # Print items in this bucket maintaining their tree structure
+            for i, bucket_info in enumerate(buckets[label]):
+                is_last = (i == len(buckets[label]) - 1)
+                print_item_tree(
+                    bucket_info['root_node'],
+                    bucket_info['children'],
+                    bucket_info['item_dict'],
+                    is_last,
+                    "\t",
+                    is_root=True,
+                    show_due_date=False
+                )
 
 def show_tasks_by_status():
     with sqlite3.connect(DB_FILE) as conn:
@@ -1790,7 +1934,7 @@ def main():
         rest = sys.argv[2:]
 
     if cmd is None:
-        show_due()
+        show_today_and_overdue_tasks()
     elif cmd in ["show"] and rest and len(rest) >= 1 and rest[0].isdigit():
         # New consolidated command: j show <id>
         item_id = int(rest[0])
@@ -1860,7 +2004,6 @@ def main():
         
         if parent_option_provided:
             set_item_parent(item_id, new_parent_id)
-
     elif cmd in ["task", "note"]:  # Handle new consolidated commands
         # Handle "j note <text> [-link <id>[,<id>,...]]" or "j task [@<pid>] <text> [-due XX] [-recur XX]" (add new commands)
         sub_cmd = cmd  # "note" or "task"
@@ -2036,7 +2179,7 @@ def main():
 
             # Use the unified delete_item function with all valid IDs
             delete_item(item_ids)
-    elif cmd in ["list"] and len(rest) >= 1:
+    elif cmd == "list" and len(rest) >= 1:
         # New consolidated command: j list/ls <page|note|task> <optional: due|status|done>
         if rest[0] == "page":
             show_journal()
@@ -2052,8 +2195,10 @@ def main():
                 show_tasks_by_status()
             elif rest[1] == "done":
                 show_completed_tasks()
+            elif rest[1] == "today":
+                show_today_and_overdue_tasks()
             else:
-                print("Error: Invalid task list option. Use 'due', 'status', or 'done'")
+                print("Error: Invalid task list option. Use 'due', 'status', 'done', or 'today'")
         else:
             print("Error: Invalid syntax. Use 'j list <page|note|task>' or 'j list task <due|status|done>'")
     elif cmd == "search":
@@ -2232,7 +2377,7 @@ COMMANDS:
         Show specific note or task details by ID
     j rm <id>[,<id>,...]
         Delete notes or tasks by ID (no need to specify note or task)
-    j list <page|note|task> [due|status|done]
+    j list <page|note|task> [due|status|done|today]
         List items with optional grouping
     j <start|restart|waiting|done> <id>[,<id>,...]
         Task status operations
