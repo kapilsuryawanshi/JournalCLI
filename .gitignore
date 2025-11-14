@@ -8,4 +8,5 @@
 *.temp
 
 # Log files
-*.log
+*.log__pycache__  
+*.pyc 
