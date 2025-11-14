@@ -257,7 +257,7 @@ def import_from_file(file_path, parent_id=None):
         # Create the item
         item_id = add_item(title, item_type, parent_item_id)
         
-        update_status(item_id, status)
+        update_item_status(item_id, status)
         
         # Add this item to the stack at its level
         stack.append((indent_level, item_id))
