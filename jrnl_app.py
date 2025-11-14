@@ -1416,6 +1416,56 @@ def add_item_with_details(title, item_type, due_date=None, parent_id=None):
     
     return item_id
 
+def get_ancestors(item_id):
+    """Get all ancestors of a given item ID"""
+    ancestors = []
+
+    with sqlite3.connect(DB_FILE) as conn:
+        current_id = item_id
+        seen_ids = set()  # To prevent infinite loops in case of data corruption
+
+        while current_id is not None:
+            if current_id in seen_ids:
+                # Prevent infinite loop in case of circular references
+                break
+            seen_ids.add(current_id)
+
+            # Get the parent of the current item
+            parent_row = conn.execute("""
+                SELECT id, status, title, creation_date, pid, completion_date
+                FROM items
+                WHERE id = ?
+            """, (current_id,)).fetchone()
+
+            if not parent_row:
+                # Item doesn't exist, break the loop
+                break
+
+            # Get the parent id of this item
+            current_item_id, current_status, current_title, current_creation_date, current_pid, current_completion_date = parent_row
+
+            if current_pid is not None:
+                # Get the actual parent item
+                parent_item = conn.execute("""
+                    SELECT id, status, title, creation_date, pid, completion_date
+                    FROM items
+                    WHERE id = ?
+                """, (current_pid,)).fetchone()
+
+                if parent_item:
+                    ancestors.append(parent_item)
+                    current_id = current_pid  # Move up to the parent
+                else:
+                    # Parent doesn't exist in database, break the loop
+                    break
+            else:
+                # No parent, we've reached the root, break the loop
+                break
+
+    # Return ancestors in order from root to the parent just before the requested item
+    return list(reversed(ancestors))  # Root to parent of the requested item
+
+
 def show_item_details(item_id):
     """Show details of a specific item (note or task), including child items and linked items"""
     with sqlite3.connect(DB_FILE) as conn:
@@ -1432,43 +1482,89 @@ def show_item_details(item_id):
 
         item_id, status, title, creation_date, pid, completion_date = item
 
-        # Get all related items to build the entire tree (this item and all its descendants)
-        all_related_items = conn.execute("""
-            WITH RECURSIVE item_tree AS (
-                -- Base case: the selected item
-                SELECT id, status, title, creation_date, pid, completion_date
-                FROM items
-                WHERE id = ?
+        # Get all ancestors going up the hierarchy
+        ancestors = get_ancestors(item_id)
 
-                UNION ALL
+        if ancestors:
+            # If the item has ancestors, we need to show the complete path from root to the requested item
+            # and also include all descendants of the requested item
 
-                -- Recursive case: child items
-                SELECT i.id, i.status, i.title, i.creation_date, i.pid, i.completion_date
-                FROM items i
-                JOIN item_tree it ON i.pid = it.id
-            )
-            SELECT id, status, title, creation_date, pid, completion_date FROM item_tree
-            ORDER BY id;
-            """, (item_id,)).fetchall()
+            # Get all descendants of the requested item
+            all_descendants = conn.execute("""
+                WITH RECURSIVE item_tree AS (
+                    -- Base case: the selected item
+                    SELECT id, status, title, creation_date, pid, completion_date
+                    FROM items
+                    WHERE id = ?
 
-        # Build the tree structure but ensure the requested item is treated as root for display
-        item_dict = {item_data[0]: item_data for item_data in all_related_items}
-        children = {item_data[0]: [] for item_data in all_related_items}
+                    UNION ALL
 
-        # Build the hierarchy - connect children to parents that exist in our result set
-        for item_data in all_related_items:
-            item_id_data = item_data[0]
-            parent_id = item_data[4]  # pid field
+                    -- Recursive case: child items
+                    SELECT i.id, i.status, i.title, i.creation_date, i.pid, i.completion_date
+                    FROM items i
+                    JOIN item_tree it ON i.pid = it.id
+                )
+                SELECT id, status, title, creation_date, pid, completion_date FROM item_tree
+                ORDER BY id;
+                """, (item_id,)).fetchall()
 
-            # If parent exists in our subset, establish the relationship
-            if parent_id and parent_id in children:
-                children[parent_id].append(item_data)
+            # Combine ancestors and descendants to build the display tree
+            all_items_to_display = list(ancestors) + all_descendants
 
-        # The requested item should be displayed as root regardless of its actual parent
-        requested_item = item_dict[item_id]
+            # Build the tree structure from all items in the path
+            item_dict = {item_data[0]: item_data for item_data in all_items_to_display}
+            # Initialize children for all items we're displaying
+            children = {item_data[0]: [] for item_data in all_items_to_display}
 
-        # Print the requested item with its entire subtree
-        print_item_tree(requested_item, children, item_dict, is_last=True, prefix="", is_root=True)
+            # Build the hierarchy - connect children to parents
+            for item_data in all_items_to_display:
+                item_id_data = item_data[0]
+                parent_id = item_data[4]  # pid field
+
+                # If parent exists in our subset, establish the relationship
+                if parent_id and parent_id in children:
+                    children[parent_id].append(item_data)
+
+            # The root of the display tree is the root ancestor
+            root_ancestor = ancestors[0]
+            # Print the path from root ancestor down to requested item and its descendants
+            print_item_tree(root_ancestor, children, item_dict, is_last=True, prefix="", is_root=True)
+        else:
+            # Original functionality: item has no ancestors (it's a root), just show itself and descendants
+            all_related_items = conn.execute("""
+                WITH RECURSIVE item_tree AS (
+                    -- Base case: the selected item
+                    SELECT id, status, title, creation_date, pid, completion_date
+                    FROM items
+                    WHERE id = ?
+
+                    UNION ALL
+
+                    -- Recursive case: child items
+                    SELECT i.id, i.status, i.title, i.creation_date, i.pid, i.completion_date
+                    FROM items i
+                    JOIN item_tree it ON i.pid = it.id
+                )
+                SELECT id, status, title, creation_date, pid, completion_date FROM item_tree
+                ORDER BY id;
+                """, (item_id,)).fetchall()
+
+            # Build the tree structure but ensure the requested item is treated as root for display
+            item_dict = {item_data[0]: item_data for item_data in all_related_items}
+            children = {item_data[0]: [] for item_data in all_related_items}
+
+            # Build the hierarchy - connect children to parents that exist in our result set
+            for item_data in all_related_items:
+                item_id_data = item_data[0]
+                parent_id = item_data[4]  # pid field
+
+                # If parent exists in our subset, establish the relationship
+                if parent_id and parent_id in children:
+                    children[parent_id].append(item_data)
+
+            # Print the requested item with its entire subtree
+            requested_item = item_dict[item_id]
+            print_item_tree(requested_item, children, item_dict, is_last=True, prefix="", is_root=True)
 
 def search_items(search_text):
     """Search for tasks and notes containing the search text (supports wildcards: * and ?)"""
